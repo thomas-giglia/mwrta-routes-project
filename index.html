@@ -2133,7 +2133,12 @@ var routeColors = [
 ];
 
 // Initialize map centered on MetroWest Boston
-var map = L.map('map').setView([42.30, -71.45], 12);
+var map = L.map('map', {
+    preferCanvas: true,
+    maxBounds: [[42.10, -71.65], [42.45, -71.30]],
+    maxBoundsViscosity: 1.0,
+    minZoom: 11
+}).setView([42.30, -71.45], 12);
 
 var osmDefault = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors | MWRTA GTFS Data',
@@ -2392,6 +2397,27 @@ sortedRoutes.forEach(function(routeId, idx) {
     item.appendChild(cb);
     item.appendChild(clickable);
     listEl.appendChild(item);
+});
+
+// Hide decorators during pan/zoom for performance
+var _decoratorCache = [];
+map.on('movestart zoomstart', function() {
+    _decoratorCache = [];
+    Object.keys(routeLayers).forEach(function(id) {
+        if (!routeActive[id]) return;
+        routeLayers[id].eachLayer(function(layer) {
+            if (layer._isArrowMarker || layer._isDirectionalMarker) {
+                routeLayers[id].removeLayer(layer);
+                _decoratorCache.push({group: routeLayers[id], layer: layer});
+            }
+        });
+    });
+});
+map.on('moveend zoomend', function() {
+    _decoratorCache.forEach(function(item) {
+        item.layer.addTo(item.group);
+    });
+    _decoratorCache = [];
 });
 
 var currentRouteStopData = [];
