@@ -3025,7 +3025,7 @@ function formatTime(minutes) {
     return h12 + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
 }
 
-function findTimetableTrips(startStopId, arriveByMin) {
+async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
     var DEST = DEST_STOP_ID;
     var TRANSFER_BUFFER = 2;
     var results = [];
@@ -3083,6 +3083,103 @@ function findTimetableTrips(startStopId, arriveByMin) {
                 break;
             }
         }
+    }
+
+    // Walking optimization using OSRM road-following distances at 5 km/hr
+    var allStopIds = walkCache.allStopIds;
+    var walkDistances = walkCache.distances;
+    var stopIdxMap = walkCache.stopIdxMap;
+    var WALK_SPEED_MPM = 83.33;
+
+    function getWalkMin(fromIdx, toIdx) {
+        if (walkDistances && walkDistances[fromIdx][toIdx] !== null) {
+            return Math.ceil(walkDistances[fromIdx][toIdx] / WALK_SPEED_MPM);
+        }
+        var src = stopLookup[allStopIds[fromIdx]];
+        var dst = stopLookup[allStopIds[toIdx]];
+        return Math.ceil(haversine(src.lat, src.lon, dst.lat, dst.lon) / WALK_SPEED_MPM);
+    }
+
+    function getWalkDist(fromIdx, toIdx) {
+        if (walkDistances && walkDistances[fromIdx][toIdx] !== null) {
+            return walkDistances[fromIdx][toIdx];
+        }
+        var src = stopLookup[allStopIds[fromIdx]];
+        var dst = stopLookup[allStopIds[toIdx]];
+        return haversine(src.lat, src.lon, dst.lat, dst.lon);
+    }
+
+    var destIdx = stopIdxMap[DEST];
+
+    // Walk-finish: ride to a stop, walk directly to DEST if you arrive on time
+    for (var s = 0; s < startTrips.length; s++) {
+        var st = startTrips[s];
+        for (var ti = st.startIdx + 1; ti < st.stops.length; ti++) {
+            var xferStop = st.stops[ti][0];
+            if (xferStop === DEST) break;
+            var xferArriveMin = st.stops[ti][1];
+            var xferIdx = stopIdxMap[xferStop];
+            var walkMinToDest = getWalkMin(xferIdx, destIdx);
+            var walkArrival = xferArriveMin + walkMinToDest;
+            if (walkArrival <= arriveByMin) {
+                results.push({
+                    type: 'walk-finish',
+                    legs: [
+                        { tripId: st.tripId, route: tripMeta[st.tripId][0], dir: tripMeta[st.tripId][1],
+                          departMin: st.departMin, arriveMin: xferArriveMin,
+                          stops: st.stops.slice(st.startIdx, ti + 1).map(function(x) { return x[0]; }) }
+                    ],
+                    walkLeg: { from: xferStop, to: DEST, walkMin: walkMinToDest, dist: getWalkDist(xferIdx, destIdx) },
+                    departMin: st.departMin,
+                    arriveMin: walkArrival
+                });
+            }
+        }
+        if (results.length > 200) break;
+    }
+
+    // Walk-transfer: ride to stop A, walk to stop B, catch a bus from B to DEST
+    for (var s = 0; s < startTrips.length; s++) {
+        var st = startTrips[s];
+        for (var ti = st.startIdx + 1; ti < st.stops.length; ti++) {
+            var xferStop = st.stops[ti][0];
+            if (xferStop === DEST) break;
+            var xferArriveMin = st.stops[ti][1];
+            var xferIdx = stopIdxMap[xferStop];
+
+            for (var d = 0; d < destTrips.length; d++) {
+                var dt = destTrips[d];
+                if (dt.tripId === st.tripId) continue;
+                for (var di = 0; di < dt.destIdx; di++) {
+                    var pickupStop = dt.stops[di][0];
+                    if (pickupStop === xferStop) continue;
+                    var busDepartMin = dt.stops[di][1];
+                    var availableMin = busDepartMin - xferArriveMin - TRANSFER_BUFFER;
+                    if (availableMin <= 0) continue;
+                    var pickupIdx = stopIdxMap[pickupStop];
+                    var walkMin = getWalkMin(xferIdx, pickupIdx);
+                    if (walkMin <= availableMin) {
+                        results.push({
+                            type: 'walk-transfer',
+                            legs: [
+                                { tripId: st.tripId, route: tripMeta[st.tripId][0], dir: tripMeta[st.tripId][1],
+                                  departMin: st.departMin, arriveMin: xferArriveMin,
+                                  stops: st.stops.slice(st.startIdx, ti + 1).map(function(x) { return x[0]; }) },
+                                { tripId: dt.tripId, route: tripMeta[dt.tripId][0], dir: tripMeta[dt.tripId][1],
+                                  departMin: busDepartMin, arriveMin: dt.stops[dt.destIdx][1],
+                                  stops: dt.stops.slice(di, dt.destIdx + 1).map(function(x) { return x[0]; }) }
+                            ],
+                            walkLeg: { from: xferStop, to: pickupStop, walkMin: walkMin, dist: getWalkDist(xferIdx, pickupIdx) },
+                            departMin: st.departMin,
+                            arriveMin: dt.stops[dt.destIdx][1]
+                        });
+                        break;
+                    }
+                }
+            }
+            if (results.length > 200) break;
+        }
+        if (results.length > 200) break;
     }
 
     // One-transfer trips
@@ -3234,29 +3331,162 @@ async function planTrip() {
             return;
         }
 
-        var nearestName = stopLookup[nearest.id].name;
-        var distMeters = Math.round(nearest.dist);
-
         if (nearest.id === DEST_STOP_ID) {
-            resultDiv.innerHTML = '<b>You are already at MathWorks Lakeside!</b> (' + distMeters + 'm away)';
+            resultDiv.innerHTML = '<b>You are already at MathWorks Lakeside!</b> (' + Math.round(nearest.dist) + 'm away)';
             return;
+        }
+
+        resultDiv.innerHTML = '<em>Calculating walking times to stops...</em>';
+
+        // Get OSRM road-following distances from user location to all stops
+        // We use OSRM distances (actual road paths) but compute time at 5 km/hr ourselves,
+        // because the public OSRM server may return driving durations instead of walking durations
+        var WALK_SPEED_MPM = 83.33; // 5 km/hr in meters per minute
+        var allStopIds = Object.keys(stopLookup);
+        var coordsStr = lon + ',' + lat + ';' + allStopIds.map(function(id) {
+            return stopLookup[id].lon + ',' + stopLookup[id].lat;
+        }).join(';');
+        var walkTableUrl = 'https://router.project-osrm.org/table/v1/foot/' + coordsStr + '?sources=0&annotations=distance';
+        var walkTimesToStops = {}; // stopId -> {min, dist}
+        try {
+            var wtResp = await fetch(walkTableUrl);
+            var wtData = await wtResp.json();
+            if (wtData.code === 'Ok') {
+                for (var wi = 0; wi < allStopIds.length; wi++) {
+                    var distM = wtData.distances[0][wi + 1];
+                    if (distM !== null) {
+                        walkTimesToStops[allStopIds[wi]] = { min: Math.ceil(distM / WALK_SPEED_MPM), dist: Math.round(distM) };
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // Fallback: if OSRM failed, estimate from haversine at 5 km/hr
+        if (Object.keys(walkTimesToStops).length === 0) {
+            for (var wi = 0; wi < allStopIds.length; wi++) {
+                var d = haversine(lat, lon, stopLookup[allStopIds[wi]].lat, stopLookup[allStopIds[wi]].lon);
+                walkTimesToStops[allStopIds[wi]] = { min: Math.ceil(d / WALK_SPEED_MPM), dist: Math.round(d) };
+            }
         }
 
         resultDiv.innerHTML = '<em>Finding best trip...</em>';
 
-        var trips = findTimetableTrips(nearest.id, arriveByMin);
+        // Find candidate starting stops: any stop you can walk to and still depart before deadline
+        var candidateStops = [];
+        for (var sid in walkTimesToStops) {
+            if (sid === DEST_STOP_ID) continue;
+            var wt = walkTimesToStops[sid];
+            if (wt.min <= arriveByMin) {
+                candidateStops.push({ id: sid, walkMin: wt.min, walkDist: wt.dist });
+            }
+        }
+        // Sort by walk time so we evaluate closer stops first
+        candidateStops.sort(function(a, b) { return a.walkMin - b.walkMin; });
+        // Limit to reasonable candidates (within 45 min walk)
+        candidateStops = candidateStops.filter(function(c) { return c.walkMin <= 45; });
 
-        if (trips.length === 0) {
-            resultDiv.innerHTML = '<b>Nearest stop:</b> ' + nearestName + ' (' + distMeters + 'm walk)<br>' +
+        // Fetch OSRM walking table between all stops (once, shared across candidates)
+        var walkCacheStopIds = Object.keys(stopLookup);
+        var walkCacheCoords = walkCacheStopIds.map(function(id) {
+            return stopLookup[id].lon + ',' + stopLookup[id].lat;
+        }).join(';');
+        var walkCacheUrl = 'https://router.project-osrm.org/table/v1/foot/' + walkCacheCoords + '?annotations=distance';
+        var walkCache = { allStopIds: walkCacheStopIds, distances: null, stopIdxMap: {} };
+        for (var wi = 0; wi < walkCacheStopIds.length; wi++) {
+            walkCache.stopIdxMap[walkCacheStopIds[wi]] = wi;
+        }
+        try {
+            var wcResp = await fetch(walkCacheUrl);
+            var wcData = await wcResp.json();
+            if (wcData.code === 'Ok') {
+                walkCache.distances = wcData.distances;
+            }
+        } catch (e) {}
+
+        // Evaluate trips from each candidate stop, accounting for walk time
+        var allTrips = []; // {trip, startStop, walkMin, walkDist, effectiveArriveMin}
+        for (var ci = 0; ci < candidateStops.length; ci++) {
+            var cand = candidateStops[ci];
+            var trips = await findTimetableTrips(cand.id, arriveByMin, walkCache);
+            for (var ti = 0; ti < trips.length; ti++) {
+                var trip = trips[ti];
+                // User must be able to walk there before the bus departs
+                if (trip.departMin >= cand.walkMin) {
+                    allTrips.push({
+                        trip: trip,
+                        startStop: cand.id,
+                        walkMin: cand.walkMin,
+                        walkDist: cand.walkDist,
+                        effectiveDepart: trip.departMin - cand.walkMin,
+                        arriveMin: trip.arriveMin
+                    });
+                }
+            }
+        }
+
+        // Also consider walking directly to destination
+        var destWalk = walkTimesToStops[DEST_STOP_ID];
+        if (destWalk && destWalk.min <= arriveByMin) {
+            allTrips.push({
+                trip: { type: 'walk-only', departMin: arriveByMin - destWalk.min, arriveMin: arriveByMin },
+                startStop: DEST_STOP_ID,
+                walkMin: destWalk.min,
+                walkDist: destWalk.dist,
+                effectiveDepart: arriveByMin - destWalk.min,
+                arriveMin: arriveByMin
+            });
+        }
+
+        if (allTrips.length === 0) {
+            resultDiv.innerHTML = '<b>Nearest stop:</b> ' + stopLookup[nearest.id].name + ' (' + Math.round(nearest.dist) + 'm walk)<br>' +
                 '<span style="color:red;">No trips found arriving by ' + formatTime(arriveByMin) + '.</span>';
             return;
         }
 
-        // Take the best option (latest departure)
-        var best = trips[0];
+        // Best trip = latest effective departure (leave home as late as possible)
+        allTrips.sort(function(a, b) { return b.effectiveDepart - a.effectiveDepart; });
+        var chosen = allTrips[0];
+        var best = chosen.trip;
+        var nearest = { id: chosen.startStop, dist: chosen.walkDist };
+        var nearestName = stopLookup[chosen.startStop].name;
+        var distMeters = chosen.walkDist;
+
+        // Handle walk-only trip (just walk to destination, no bus needed)
+        if (best.type === 'walk-only') {
+            var html = '<b>Walk directly to MathWorks Lakeside</b><br>';
+            html += '<div style="font-size:10px;color:var(--text-secondary);margin:2px 0;">' + chosen.walkDist + 'm walk (' + chosen.walkMin + ' min)</div>';
+            html += '<div style="font-size:10px;color:var(--text-muted);">Leave by ' + formatTime(arriveByMin - chosen.walkMin) + ' to arrive by ' + formatTime(arriveByMin) + '</div>';
+            resultDiv.innerHTML = html;
+            document.getElementById('trip-clear-wrap').style.display = '';
+            tripActive = true;
+            tripHidden = false;
+            updateTripButtons();
+            hideAll();
+            if (tripMarker) map.removeLayer(tripMarker);
+            if (tripPath) map.removeLayer(tripPath);
+            tripPath = L.layerGroup();
+            var dest = stopLookup[DEST_STOP_ID];
+            var walkUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + dest.lon + ',' + dest.lat + '?geometries=geojson&overview=full';
+            try {
+                var wResp = await fetch(walkUrl);
+                var wData = await wResp.json();
+                if (wData.code === 'Ok' && wData.routes && wData.routes.length > 0) {
+                    var wCoords = wData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                    L.polyline(wCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+                }
+            } catch (e) {
+                L.polyline([[lat, lon], [dest.lat, dest.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+            }
+            L.circleMarker([lat, lon], { radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1 }).bindTooltip('You', {permanent: true}).addTo(tripPath);
+            L.circleMarker([dest.lat, dest.lon], { radius: 7, color: 'white', weight: 3, fillColor: '#228B22', fillOpacity: 1 }).bindTooltip('MathWorks Lakeside', {permanent: true}).addTo(tripPath);
+            tripPath.addTo(map);
+            map.fitBounds(L.latLngBounds([[lat, lon], [dest.lat, dest.lon]]), {padding: [50, 50]});
+            return;
+        }
 
         // Build segments for display and drawing
         var segments = [];
+        var walkLeg = best.walkLeg || null;
         if (best.type === 'direct') {
             segments.push({
                 route: best.route,
@@ -3281,7 +3511,7 @@ async function planTrip() {
         }
 
         // Build results HTML
-        var html = '<b>Walk to:</b> ' + nearestName + ' (' + distMeters + 'm)<br>';
+        var html = '<b>Walk to:</b> ' + nearestName + ' (' + distMeters + 'm, ' + chosen.walkMin + ' min)<br>';
         html += '<div style="font-size:10px;color:var(--text-secondary);margin:2px 0;"><b>Depart:</b> ' + formatTime(best.departMin) + ' &bull; <b>Arrive:</b> ' + formatTime(best.arriveMin) + '</div>';
         html += '<hr style="margin:4px 0;">';
         for (var s = 0; s < segments.length; s++) {
@@ -3296,9 +3526,16 @@ async function planTrip() {
             html += '<span style="color:var(--text-muted);">' + formatTime(seg.departMin) + ' &rarr; ' + formatTime(seg.arriveMin) + ' &bull; ' + seg.stops.length + ' stops</span>';
             html += '</div>';
             if (s < segments.length - 1) {
-                var waitMin = segments[s + 1].departMin - seg.arriveMin;
-                html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Transfer at ' + stopLookup[seg.stops[seg.stops.length - 1]].name + ' (' + waitMin + ' min wait)</div>';
+                if (walkLeg && s === 0 && (best.type === 'walk-transfer' || best.type === 'walk-finish')) {
+                    html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm to ' + stopLookup[walkLeg.to].name + ' (' + walkLeg.walkMin + ' min)</div>';
+                } else {
+                    var waitMin = segments[s + 1].departMin - seg.arriveMin;
+                    html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Transfer at ' + stopLookup[seg.stops[seg.stops.length - 1]].name + ' (' + waitMin + ' min wait)</div>';
+                }
             }
+        }
+        if (walkLeg && best.type === 'walk-finish') {
+            html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm (' + walkLeg.walkMin + ' min)</div>';
         }
         html += '<hr style="margin:4px 0;"><b>Arrive:</b> MathWorks Lakeside at ' + formatTime(best.arriveMin);
 
@@ -3375,10 +3612,55 @@ async function planTrip() {
             });
         }
 
+        // Draw walk segment if present (using OSRM foot routing)
+        if (walkLeg) {
+            var wFrom = stopLookup[walkLeg.from];
+            var wTo = stopLookup[walkLeg.to];
+            var walkCoordStr = wFrom.lon + ',' + wFrom.lat + ';' + wTo.lon + ',' + wTo.lat;
+            var walkOsrmUrl = 'https://router.project-osrm.org/route/v1/foot/' + walkCoordStr + '?geometries=geojson&overview=full';
+            try {
+                var walkResp = await fetch(walkOsrmUrl);
+                var walkData = await walkResp.json();
+                if (walkData.code === 'Ok' && walkData.routes && walkData.routes.length > 0) {
+                    var walkCoords = walkData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                    L.polyline(walkCoords, {
+                        color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
+                    }).addTo(tripPath);
+                    walkCoords.forEach(function(c) { allCoords.push(c); });
+                } else {
+                    L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], {
+                        color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
+                    }).addTo(tripPath);
+                }
+            } catch (e) {
+                L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], {
+                    color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
+                }).addTo(tripPath);
+            }
+            allCoords.push([wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]);
+        }
+
         var nearStop = stopLookup[nearest.id];
-        L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], {
-            color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
-        }).addTo(tripPath);
+        var walkToStopUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + nearStop.lon + ',' + nearStop.lat + '?geometries=geojson&overview=full';
+        try {
+            var wtsResp = await fetch(walkToStopUrl);
+            var wtsData = await wtsResp.json();
+            if (wtsData.code === 'Ok' && wtsData.routes && wtsData.routes.length > 0) {
+                var wtsCoords = wtsData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                L.polyline(wtsCoords, {
+                    color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
+                }).addTo(tripPath);
+                wtsCoords.forEach(function(c) { allCoords.push(c); });
+            } else {
+                L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], {
+                    color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
+                }).addTo(tripPath);
+            }
+        } catch (e) {
+            L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], {
+                color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
+            }).addTo(tripPath);
+        }
 
         L.circleMarker([lat, lon], {
             radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1
