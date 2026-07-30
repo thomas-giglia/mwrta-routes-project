@@ -2378,9 +2378,57 @@ function planTrip() {
     allOptions = allOptions.slice(0, 10);
 
     if (allOptions.length === 0) {
-        var modeLabel = timeMode === 'depart' ? 'departing near' : 'arriving near';
-        resultsDiv.innerHTML = '<div class="no-results">No routes found ' + modeLabel + ' ' + minutesToTime(targetMin) + ' between these stops.</div>';
-        return;
+        // No ideal trips found — show all upcoming trips between these stops
+        var fallbackDirect = findDirectRoutes(fromId, toId, nowMin, 480);
+        var fallbackConnections = findConnections(fromId, toId, nowMin, 480);
+        var fallbackOptions = [];
+        fallbackDirect.forEach(function(d) {
+            var delay = getLiveDelay(d.routeId, d.trip);
+            var estDep = d.depMin + (delay || 0);
+            var estArr = d.arrMin + (delay || 0);
+            var stopIds = [];
+            for (var si = d.fromIdx; si <= d.toIdx; si++) stopIds.push(d.trip.stops[si].s);
+            fallbackOptions.push({
+                type: 'direct', routeId: d.routeId, headsign: d.trip.headsign,
+                scheduledDep: d.depMin, scheduledArr: d.arrMin,
+                estDep: estDep, estArr: estArr, delay: delay,
+                duration: d.arrMin - d.depMin, stopIds: stopIds
+            });
+        });
+        fallbackConnections.forEach(function(c) {
+            var delay1 = getLiveDelay(c.leg1.routeId, c.leg1.trip);
+            var delay2 = getLiveDelay(c.leg2.routeId, c.leg2.trip);
+            var estTransferArr = c.leg1.arrMin + (delay1 || 0);
+            var estLeg2Dep = c.leg2.depMin + (delay2 || 0);
+            var connectionOk = estLeg2Dep - estTransferArr >= 1;
+            var buffer = estLeg2Dep - estTransferArr;
+            var leg1Stops = [];
+            for (var si = c.leg1.fromIdx; si <= c.leg1.toIdx; si++) leg1Stops.push(c.leg1.trip.stops[si].s);
+            var leg2Stops = [];
+            for (var sj = c.leg2.fromIdx; sj <= c.leg2.toIdx; sj++) leg2Stops.push(c.leg2.trip.stops[sj].s);
+            fallbackOptions.push({
+                type: 'connection', leg1RouteId: c.leg1.routeId, leg1Headsign: c.leg1.trip.headsign,
+                leg2RouteId: c.leg2.routeId, leg2Headsign: c.leg2.trip.headsign,
+                transferStop: scheduleStops[c.transferStopId] ? scheduleStops[c.transferStopId].name : '?',
+                scheduledDep: c.leg1.depMin, scheduledArr: c.leg2.arrMin,
+                estDep: c.leg1.depMin + (delay1 || 0), estArr: c.leg2.arrMin + (delay2 || 0),
+                estTransferArr: estTransferArr, estLeg2Dep: estLeg2Dep,
+                delay1: delay1, delay2: delay2, connectionOk: connectionOk, buffer: buffer,
+                duration: c.leg2.arrMin - c.leg1.depMin, leg1Stops: leg1Stops, leg2Stops: leg2Stops
+            });
+        });
+        fallbackOptions = fallbackOptions.filter(function(o) { return o.estDep >= nowMin; });
+        fallbackOptions.sort(function(a, b) { return a.estDep - b.estDep; });
+        fallbackOptions = fallbackOptions.slice(0, 10);
+
+        if (fallbackOptions.length === 0) {
+            resultsDiv.innerHTML = '<div class="no-results">No more trips today between these stops.</div>';
+            return;
+        }
+
+        allOptions = fallbackOptions;
+        var modeLabel = timeMode === 'depart' ? 'departing near' : 'arriving by';
+        resultsDiv.innerHTML = '<div class="no-results" style="color:#b57800;background:#fff8e0;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;margin-bottom:8px;">No ideal match ' + modeLabel + ' ' + minutesToTime(targetMin) + '. Showing all upcoming trips:</div>';
     }
 
     var html = '';
