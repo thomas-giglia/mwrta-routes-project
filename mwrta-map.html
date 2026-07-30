@@ -122,7 +122,8 @@
     <div class="trip-planner" id="tripPlanner">
         <h3><span class="live-indicator"></span>Trip Planner (Live)</h3>
         <label>From</label>
-        <select id="tripFrom"><option value="">Select origin stop...</option></select>
+        <input type="text" id="tripFromAddress" placeholder="Type an address or location..." style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;border:1px solid #ccc;border-radius:4px;margin-bottom:4px;">
+        <select id="tripFrom" style="margin-bottom:0;"><option value="">— or pick a stop —</option></select>
         <label>To</label>
         <select id="tripTo"><option value="">Select destination stop...</option></select>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
@@ -764,10 +765,10 @@ var TripControl = L.Control.extend({
     }
 });
 new TripControl().addTo(map);
-document.getElementById('trip-btn').addEventListener('click', planTrip);
+document.getElementById('trip-btn').addEventListener('click', planTripToMW);
 document.getElementById('trip-clear-btn').addEventListener('click', clearTrip);
 document.getElementById('trip-address').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') planTrip();
+    if (e.key === 'Enter') planTripToMW();
 });
 
 // Sort routes by short_name
@@ -1667,7 +1668,7 @@ function findTimetableTrips(startStopId, arriveByMin) {
     return results;
 }
 
-async function planTrip() {
+async function planTripToMW() {
     var resultDiv = document.getElementById('trip-result');
     var address = document.getElementById('trip-address').value.trim();
     var timeVal = document.getElementById('trip-time').value;
@@ -2034,6 +2035,17 @@ var mathWorksStarMarkers = {};
     var hh = String(now.getHours()).padStart(2, '0');
     var mm = String(now.getMinutes()).padStart(2, '0');
     document.getElementById('tripTime').value = hh + ':' + mm;
+
+    // Address and dropdown interplay: typing clears dropdown, picking clears address
+    document.getElementById('tripFromAddress').addEventListener('input', function() {
+        if (this.value.trim()) document.getElementById('tripFrom').value = '';
+    });
+    document.getElementById('tripFrom').addEventListener('change', function() {
+        if (this.value) document.getElementById('tripFromAddress').value = '';
+    });
+    document.getElementById('tripFromAddress').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') planTrip();
+    });
 })();
 
 function timeToMinutes(t) {
@@ -2188,6 +2200,38 @@ function findDirectRoutes(fromId, toId, afterMin, windowMin) {
             }
         });
     });
+    // Also search tripStopTimes for additional trips not in scheduleTrips
+    var foundTripIds = {};
+    results.forEach(function(r) { if (r.trip && r.trip.trip_id) foundTripIds[r.trip.trip_id] = true; });
+    Object.keys(tripStopTimes).forEach(function(tripId) {
+        if (foundTripIds[tripId]) return;
+        var stops = tripStopTimes[tripId];
+        var fromIdx = -1, toIdx = -1;
+        for (var i = 0; i < stops.length; i++) {
+            if (stops[i][0] === fromId && fromIdx === -1) fromIdx = i;
+            if (stops[i][0] === toId && fromIdx !== -1) { toIdx = i; break; }
+        }
+        if (fromIdx >= 0 && toIdx > fromIdx) {
+            var depMin = stops[fromIdx][1];
+            var arrMin = stops[toIdx][1];
+            if (depMin >= afterMin && depMin <= afterMin + windowMin) {
+                var routeId = tripMeta[tripId] ? tripMeta[tripId][0] : 'unknown';
+                var stopList = [];
+                for (var si = fromIdx; si <= toIdx; si++) {
+                    stopList.push({ s: stops[si][0], a: Math.floor(stops[si][1]/60) + ':' + String(stops[si][1]%60).padStart(2,'0') + ':00', d: 0 });
+                }
+                results.push({
+                    type: 'direct',
+                    routeId: routeId,
+                    trip: { trip_id: tripId, stops: stopList, headsign: '', shape_id: null },
+                    fromIdx: 0,
+                    toIdx: stopList.length - 1,
+                    depMin: depMin,
+                    arrMin: arrMin
+                });
+            }
+        }
+    });
     return results;
 }
 
@@ -2203,8 +2247,8 @@ function findConnections(fromId, toId, afterMin, windowMin) {
             var transferStopId = trip1.stops[i].s;
             if (transferStopId === toId) break; // direct, skip
             var transferArrMin = timeToMinutes(trip1.stops[i].a);
-            // Find trips from transfer stop to destination, departing 2-20 min after arrival
-            var connectTrips = findDirectRoutes(transferStopId, toId, transferArrMin + 2, 20);
+            // Find trips from transfer stop to destination, departing 2-45 min after arrival
+            var connectTrips = findDirectRoutes(transferStopId, toId, transferArrMin + 2, 45);
             connectTrips.forEach(function(ct) {
                 results.push({
                     type: 'connection',
@@ -2247,16 +2291,48 @@ function getLiveDelay(routeId, trip) {
     return bestDelay;
 }
 
-function planTrip() {
+async function planTrip() {
     // Clear previous trip highlight
     if (map._tripHighlight) { map.removeLayer(map._tripHighlight); map._tripHighlight = null; }
 
     var fromId = document.getElementById('tripFrom').value;
+    var fromAddress = document.getElementById('tripFromAddress').value.trim();
     var toId = document.getElementById('tripTo').value;
     var resultsDiv = document.getElementById('tripResults');
+    var walkInfo = '';
+
+    if (fromAddress) {
+        resultsDiv.innerHTML = '<div class="no-results">Finding location...</div>';
+        try {
+            var geocodeUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' +
+                encodeURIComponent(fromAddress + ', Massachusetts') + '&limit=1';
+            var geoResp = await fetch(geocodeUrl, {headers: {'User-Agent': 'MWRTA-TripPlanner/1.0'}});
+            var geoResults = await geoResp.json();
+            if (!geoResults || geoResults.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-results" style="color:red;">Could not find that address. Try being more specific.</div>';
+                return;
+            }
+            var lat = parseFloat(geoResults[0].lat);
+            var lon = parseFloat(geoResults[0].lon);
+            var nearest = findNearestStop(lat, lon);
+            if (!nearest.id) {
+                resultsDiv.innerHTML = '<div class="no-results" style="color:red;">No stops found near that location.</div>';
+                return;
+            }
+            fromId = nearest.id;
+            var walkMeters = Math.round(nearest.dist);
+            var walkMin = Math.ceil(walkMeters / 80);
+            var stopName = stopLookup[nearest.id] ? stopLookup[nearest.id].name : (scheduleStops[nearest.id] ? scheduleStops[nearest.id].name : '?');
+            walkInfo = '<div style="background:#e8f4fd;border:1px solid #b3d9f2;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;">' +
+                '🚶 Walk to <b>' + stopName + '</b> (~' + walkMeters + 'm, ~' + walkMin + ' min)</div>';
+        } catch (e) {
+            resultsDiv.innerHTML = '<div class="no-results" style="color:red;">Geocoding failed: ' + e.message + '</div>';
+            return;
+        }
+    }
 
     if (!fromId || !toId) {
-        resultsDiv.innerHTML = '<div class="no-results">Select both origin and destination stops.</div>';
+        resultsDiv.innerHTML = '<div class="no-results">Enter an address or select a stop, and choose a destination.</div>';
         return;
     }
     if (fromId === toId) {
@@ -2269,17 +2345,17 @@ function planTrip() {
     var now = new Date();
     var nowMin = now.getHours() * 60 + now.getMinutes();
     var targetMin = nowMin;
+    var userSetTime = false;
     if (timeVal) {
         var parts = timeVal.split(':');
         targetMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        userSetTime = true;
     }
 
     // Search window
     var searchStart, searchWindow;
-    // Never show trips that already departed
-    var earliest = Math.max(nowMin, targetMin);
     if (timeMode === 'depart') {
-        searchStart = earliest;
+        searchStart = userSetTime ? targetMin : nowMin;
         searchWindow = 180;
     } else {
         // For "arrive by", search departures that could arrive by target time
@@ -2348,15 +2424,10 @@ function planTrip() {
 
     // Filter based on mode
     if (timeMode === 'depart') {
-        // Only show trips departing from now onward
-        allOptions = allOptions.filter(function(o) {
-            return o.estDep >= nowMin;
-        });
-        allOptions.sort(function(a, b) { return a.estArr - b.estArr; });
+        allOptions.sort(function(a, b) { return a.estDep - b.estDep; });
     } else {
-        // Only show trips arriving by the target time
         allOptions = allOptions.filter(function(o) {
-            return o.estArr <= targetMin && o.estDep >= nowMin;
+            return o.estArr <= targetMin;
         });
         allOptions.sort(function(a, b) { return a.estArr - b.estArr; });
     }
@@ -2379,8 +2450,8 @@ function planTrip() {
 
     if (allOptions.length === 0) {
         // No ideal trips found — show all upcoming trips between these stops
-        var fallbackDirect = findDirectRoutes(fromId, toId, nowMin, 480);
-        var fallbackConnections = findConnections(fromId, toId, nowMin, 480);
+        var fallbackDirect = findDirectRoutes(fromId, toId, searchStart, 480);
+        var fallbackConnections = findConnections(fromId, toId, searchStart, 480);
         var fallbackOptions = [];
         fallbackDirect.forEach(function(d) {
             var delay = getLiveDelay(d.routeId, d.trip);
@@ -2417,7 +2488,7 @@ function planTrip() {
                 duration: c.leg2.arrMin - c.leg1.depMin, leg1Stops: leg1Stops, leg2Stops: leg2Stops
             });
         });
-        fallbackOptions = fallbackOptions.filter(function(o) { return o.estDep >= nowMin; });
+        fallbackOptions.sort(function(a, b) { return a.estDep - b.estDep; });
         fallbackOptions.sort(function(a, b) { return a.estDep - b.estDep; });
         fallbackOptions = fallbackOptions.slice(0, 10);
 
@@ -2428,10 +2499,10 @@ function planTrip() {
 
         allOptions = fallbackOptions;
         var modeLabel = timeMode === 'depart' ? 'departing near' : 'arriving by';
-        resultsDiv.innerHTML = '<div class="no-results" style="color:#b57800;background:#fff8e0;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;margin-bottom:8px;">No ideal match ' + modeLabel + ' ' + minutesToTime(targetMin) + '. Showing all upcoming trips:</div>';
+        walkInfo = (walkInfo || '') + '<div class="no-results" style="color:#b57800;background:#fff8e0;border:1px solid #ffe082;border-radius:6px;padding:8px 10px;margin-bottom:8px;">No ideal match ' + modeLabel + ' ' + minutesToTime(targetMin) + '. Showing all upcoming trips:</div>';
     }
 
-    var html = '';
+    var html = walkInfo || '';
     allOptions.forEach(function(opt) {
         var cls = '';
         if (opt.type === 'connection') {
