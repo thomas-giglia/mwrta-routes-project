@@ -3339,15 +3339,13 @@ async function planTrip() {
         resultDiv.innerHTML = '<em>Calculating walking times to stops...</em>';
 
         // Get OSRM road-following distances from user location to all stops
-        // We use OSRM distances (actual road paths) but compute time at 5 km/hr ourselves,
-        // because the public OSRM server may return driving durations instead of walking durations
         var WALK_SPEED_MPM = 83.33; // 5 km/hr in meters per minute
         var allStopIds = Object.keys(stopLookup);
         var coordsStr = lon + ',' + lat + ';' + allStopIds.map(function(id) {
             return stopLookup[id].lon + ',' + stopLookup[id].lat;
         }).join(';');
         var walkTableUrl = 'https://router.project-osrm.org/table/v1/foot/' + coordsStr + '?sources=0&annotations=distance';
-        var walkTimesToStops = {}; // stopId -> {min, dist}
+        var walkTimesToStops = {};
         try {
             var wtResp = await fetch(walkTableUrl);
             var wtData = await wtResp.json();
@@ -3361,7 +3359,6 @@ async function planTrip() {
             }
         } catch (e) {}
 
-        // Fallback: if OSRM failed, estimate from haversine at 5 km/hr
         if (Object.keys(walkTimesToStops).length === 0) {
             for (var wi = 0; wi < allStopIds.length; wi++) {
                 var d = haversine(lat, lon, stopLookup[allStopIds[wi]].lat, stopLookup[allStopIds[wi]].lon);
@@ -3371,21 +3368,18 @@ async function planTrip() {
 
         resultDiv.innerHTML = '<em>Finding best trip...</em>';
 
-        // Find candidate starting stops: any stop you can walk to and still depart before deadline
+        // Candidate starting stops (within 45 min walk)
         var candidateStops = [];
         for (var sid in walkTimesToStops) {
             if (sid === DEST_STOP_ID) continue;
             var wt = walkTimesToStops[sid];
-            if (wt.min <= arriveByMin) {
+            if (wt.min <= 45) {
                 candidateStops.push({ id: sid, walkMin: wt.min, walkDist: wt.dist });
             }
         }
-        // Sort by walk time so we evaluate closer stops first
         candidateStops.sort(function(a, b) { return a.walkMin - b.walkMin; });
-        // Limit to reasonable candidates (within 45 min walk)
-        candidateStops = candidateStops.filter(function(c) { return c.walkMin <= 45; });
 
-        // Fetch OSRM walking table between all stops (once, shared across candidates)
+        // Fetch OSRM walking table between all stops (for walk-transfer/walk-finish)
         var walkCacheStopIds = Object.keys(stopLookup);
         var walkCacheCoords = walkCacheStopIds.map(function(id) {
             return stopLookup[id].lon + ',' + stopLookup[id].lat;
@@ -3403,14 +3397,13 @@ async function planTrip() {
             }
         } catch (e) {}
 
-        // Evaluate trips from each candidate stop, accounting for walk time
-        var allTrips = []; // {trip, startStop, walkMin, walkDist, effectiveArriveMin}
+        // Evaluate trips from each candidate stop
+        var allTrips = [];
         for (var ci = 0; ci < candidateStops.length; ci++) {
             var cand = candidateStops[ci];
             var trips = await findTimetableTrips(cand.id, arriveByMin, walkCache);
             for (var ti = 0; ti < trips.length; ti++) {
                 var trip = trips[ti];
-                // User must be able to walk there before the bus departs
                 if (trip.departMin >= cand.walkMin) {
                     allTrips.push({
                         trip: trip,
@@ -3451,7 +3444,7 @@ async function planTrip() {
         var nearestName = stopLookup[chosen.startStop].name;
         var distMeters = chosen.walkDist;
 
-        // Handle walk-only trip (just walk to destination, no bus needed)
+        // Handle walk-only trip
         if (best.type === 'walk-only') {
             var html = '<b>Walk directly to MathWorks Lakeside</b><br>';
             html += '<div style="font-size:10px;color:var(--text-secondary);margin:2px 0;">' + chosen.walkDist + 'm walk (' + chosen.walkMin + ' min)</div>';
@@ -3623,23 +3616,18 @@ async function planTrip() {
                 var walkData = await walkResp.json();
                 if (walkData.code === 'Ok' && walkData.routes && walkData.routes.length > 0) {
                     var walkCoords = walkData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
-                    L.polyline(walkCoords, {
-                        color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
-                    }).addTo(tripPath);
+                    L.polyline(walkCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
                     walkCoords.forEach(function(c) { allCoords.push(c); });
                 } else {
-                    L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], {
-                        color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
-                    }).addTo(tripPath);
+                    L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
                 }
             } catch (e) {
-                L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], {
-                    color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8
-                }).addTo(tripPath);
+                L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
             }
             allCoords.push([wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]);
         }
 
+        // Walk to starting stop (OSRM foot route)
         var nearStop = stopLookup[nearest.id];
         var walkToStopUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + nearStop.lon + ',' + nearStop.lat + '?geometries=geojson&overview=full';
         try {
@@ -3647,19 +3635,13 @@ async function planTrip() {
             var wtsData = await wtsResp.json();
             if (wtsData.code === 'Ok' && wtsData.routes && wtsData.routes.length > 0) {
                 var wtsCoords = wtsData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
-                L.polyline(wtsCoords, {
-                    color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
-                }).addTo(tripPath);
+                L.polyline(wtsCoords, { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
                 wtsCoords.forEach(function(c) { allCoords.push(c); });
             } else {
-                L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], {
-                    color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
-                }).addTo(tripPath);
+                L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
             }
         } catch (e) {
-            L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], {
-                color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7
-            }).addTo(tripPath);
+            L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
         }
 
         L.circleMarker([lat, lon], {
