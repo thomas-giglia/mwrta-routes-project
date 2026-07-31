@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    let filePath = req.url === '/' ? '/mwrta-map.html' : req.url;
+    let filePath = req.url === '/' ? '/index.html' : req.url;
     filePath = path.join(__dirname, filePath);
 
     const ext = path.extname(filePath);

@@ -144,6 +144,7 @@
             background: var(--bg-primary); color: var(--text-primary);
         }
         [data-theme="dark"] .leaflet-popup-tip { background: var(--bg-primary); }
+        .inverted-tiles { filter: invert(1) hue-rotate(180deg) contrast(0.7) brightness(1.3); }
         .stop-number, .stop-label, .directional-marker, .leaflet-tooltip,
         .leaflet-popup-content, .leaflet-control-layers {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -151,13 +152,50 @@
         .leaflet-tooltip {
             border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px; font-weight: 500;
         }
+        .sidebar-toggle {
+            position: absolute; top: 12px; left: 12px; z-index: 1001;
+            width: 36px; height: 36px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border); background: var(--bg-primary);
+            box-shadow: var(--shadow); cursor: pointer; display: none;
+            align-items: center; justify-content: center; font-size: 18px;
+            color: var(--text-primary); transition: all var(--transition);
+        }
+        .sidebar-toggle:hover { background: var(--bg-hover); border-color: var(--accent); }
+        .sidebar.collapsed { display: none; }
+        .sidebar.collapsed ~ .sidebar-toggle { display: flex; }
+        .trip-planner-header {
+            display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+        }
+        .trip-planner-header h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
+        .trip-planner-body.collapsed { display: none; }
+        .collapse-arrow {
+            font-size: 12px; color: var(--text-muted); transition: transform var(--transition);
+            margin-left: 8px;
+        }
+        .collapse-arrow.rotated { transform: rotate(-90deg); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: calc(100vw - 24px); max-width: 340px;
+                max-height: 60vh;
+            }
+            .sidebar-toggle { display: flex; }
+            .sidebar:not(.collapsed) ~ .sidebar-toggle { display: none; }
+        }
     </style>
 </head>
 <body>
     <div id="map"></div>
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Show sidebar">&#9776;</button>
     <div class="sidebar">
-        <h1>MWRTA Fixed Routes</h1>
-        <h2>MetroWest Regional Transit Authority</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div><h1>MWRTA Fixed Routes</h1>
+            <h2>MetroWest Regional Transit Authority</h2></div>
+            <button class="sidebar-toggle" style="position:static;display:flex;width:28px;height:28px;font-size:14px;box-shadow:none;" onclick="toggleSidebar()" title="Hide sidebar">&times;</button>
+        </div>
         <div class="controls">
             <button class="btn" onclick="showAll()">Show All</button>
             <button class="btn" onclick="hideAll()">Hide All</button>
@@ -174,12 +212,17 @@
         </div>
         <div id="route-list"></div>
         <div class="trip-planner" id="tripPlanner" style="margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-secondary);">
-            <h3 style="font-size:14px;margin:0 0 10px;color:var(--text-primary);"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#27ae60;margin-right:4px;animation:pulse 2s infinite;"></span>Trip Planner (Live)</h3>
-            <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px;">From</label>
+            <div class="trip-planner-header" onclick="toggleTripPlanner()">
+                <h3><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#27ae60;margin-right:4px;animation:pulse 2s infinite;"></span>Trip Planner (Live)</h3>
+                <span class="collapse-arrow" id="tripPlannerArrow">&#9660;</span>
+            </div>
+            <div class="trip-planner-body" id="tripPlannerBody">
+            <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px;margin-top:10px;">From</label>
             <input type="text" id="tripFromAddress" placeholder="Type an address or location..." style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;background:var(--bg-primary);color:var(--text-primary);">
             <select id="tripFrom" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;background:var(--bg-primary);color:var(--text-primary);"><option value="">— or pick a stop —</option></select>
             <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px;">To</label>
-            <select id="tripTo" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;background:var(--bg-primary);color:var(--text-primary);"><option value="">Select destination stop...</option></select>
+            <input type="text" id="tripToAddress" placeholder="Type an address or location..." style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <select id="tripTo" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;background:var(--bg-primary);color:var(--text-primary);"><option value="">— or pick a stop —</option></select>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
                 <select id="tripTimeMode" style="width:auto;flex:0 0 auto;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);">
                     <option value="depart">Depart at</option>
@@ -190,10 +233,22 @@
             </div>
             <button class="btn" style="width:100%;padding:9px;background:var(--accent);color:white;border-color:var(--accent);font-weight:600;" onclick="planTripStops()">Find Routes</button>
             <div id="tripResults" style="margin-top:12px;"></div>
+            </div>
         </div>
     </div>
     <script src="schedule_data.js"></script>
     <script>
+function toggleSidebar() {
+    var sb = document.querySelector('.sidebar');
+    sb.classList.toggle('collapsed');
+    document.getElementById('sidebarToggle').style.display = sb.classList.contains('collapsed') ? 'flex' : 'none';
+}
+function toggleTripPlanner() {
+    var body = document.getElementById('tripPlannerBody');
+    var arrow = document.getElementById('tripPlannerArrow');
+    body.classList.toggle('collapsed');
+    arrow.classList.toggle('rotated');
+}
 var shapeDataOriginal = {};
 shapeDataOriginal["004980e6-9f4c-4b6d-ba69-2c51b2ea17f2"] = [
 [42.2758746013567,-71.411843831053],[42.2759175167035,-71.4108219093574],[42.2767557070706,-71.4104879743152],[42.2776877747588,-71.4093815630306],[42.278373079203,-71.4094848280838],[42.277966724513,-71.4116574175154],[42.276754365966,-71.4167482505291],[42.27655464,-71.41777396],[42.2756023571254,-71.4207581532454],[42.2745925053711,-71.4206602526104],[42.2731119259066,-71.4216084135537],[42.269863770596,-71.4207943630692],[42.2703130406328,-71.4192051541332],[42.2618801749873,-71.421321417172],[42.2572533641608,-71.4267287508684],[42.251246556714,-71.4304798203993],[42.2373017512144,-71.4319764931188],[42.2318769831584,-71.4309411603773],[42.2272340790769,-71.4320529360803],[42.2185048293176,-71.4262177900206],[42.2114211148871,-71.4251744106516],[42.2094175046335,-71.4271552221272],[42.2014862121037,-71.4291722434266],[42.1980489610463,-71.431426640238],[42.1925611610747,-71.4365617297031],[42.1843965163467,-71.4419100547975],[42.1802685964268,-71.4486209421528],[42.1786860930136,-71.4575674508552],[42.1744039460662,-71.4682319145341],[42.1683072846119,-71.4776464687375],[42.1598771011756,-71.4847100665992],[42.1555748376593,-71.4870945505556],[42.1525975854753,-71.4902287119763],[42.1508541495117,-71.4972185490858],[42.150950709042,-71.5027345122537],[42.150375375174,-71.5041171910833],[42.1466672209899,-71.5119546062919],[42.143891134494,-71.512607724226],[42.1436390068316,-71.5131320961196],[42.1429604079104,-71.5167369852505],[42.1424735869452,-71.5177401314819],[42.1423743452057,-71.5186413537646],[42.1422067071323,-71.5193333637317]];
@@ -2263,9 +2318,9 @@ var routeColors = [
 // Initialize map centered on MetroWest Boston
 var map = L.map('map', {
     preferCanvas: true,
-    maxBounds: [[42.10, -71.65], [42.45, -71.30]],
-    maxBoundsViscosity: 1.0,
-    minZoom: 11
+    maxBounds: [[42.00, -71.75], [42.55, -71.15]],
+    maxBoundsViscosity: 0.8,
+    minZoom: 10
 }).setView([42.30, -71.45], 12);
 
 var osmDefault = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -2288,51 +2343,29 @@ var cartoDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/
     maxZoom: 19
 });
 
+var cartoVoyagerInverted = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO | MWRTA GTFS Data',
+    maxZoom: 19,
+    className: 'inverted-tiles'
+});
+
 var currentTileLayer = cartoVoyager;
 currentTileLayer.addTo(map);
 
 var layerControl = L.control.layers({
     'Clean (recommended)': cartoVoyager,
     'Minimal': cartoLight,
+    'Inverted': cartoVoyagerInverted,
     'Dark': cartoDark,
     'Detailed (OSM)': osmDefault
 }, null, {position: 'topright'}).addTo(map);
 
-// Trip action buttons (top right)
-var TripHideButton = L.Control.extend({
-    options: {position: 'topright'},
-    onAdd: function(map) {
-        var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-        container.innerHTML = '<a id="trip-hide-btn" href="#" title="Hide trip route" style="display:flex;align-items:center;justify-content:center;width:45px;height:45px;opacity:0.35;pointer-events:none;">' +
-            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-            '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>' +
-            '</svg></a>';
-        L.DomEvent.disableClickPropagation(container);
-        return container;
-    }
-});
-new TripHideButton().addTo(map);
-
-var TripTrashButton = L.Control.extend({
-    options: {position: 'topright'},
-    onAdd: function(map) {
-        var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-        container.innerHTML = '<a id="trip-trash-btn" href="#" title="Delete trip route" style="display:flex;align-items:center;justify-content:center;width:45px;height:45px;opacity:0.35;pointer-events:none;">' +
-            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-            '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' +
-            '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>' +
-            '</svg></a>';
-        L.DomEvent.disableClickPropagation(container);
-        return container;
-    }
-});
-new TripTrashButton().addTo(map);
 
 // Theme cycling: light → dark → evil
 var themeMode = 'light'; // 'light', 'dark', 'evil'
 var themeOrder = ['light', 'dark', 'evil'];
 var themeIcons = { light: '&#9790;', dark: '&#128520;', evil: '&#9788;' };
-var themeTiles = { light: cartoVoyager, dark: cartoDark, evil: cartoDark };
+var themeTiles = { light: cartoVoyager, dark: cartoVoyagerInverted, evil: cartoDark };
 function toggleTheme() {
     var idx = themeOrder.indexOf(themeMode);
     themeMode = themeOrder[(idx + 1) % themeOrder.length];
@@ -2356,17 +2389,53 @@ var TripControl = L.Control.extend({
     onAdd: function(map) {
         var container = L.DomUtil.create('div');
         container.innerHTML = '<div class="leaflet-bar" id="trip-panel" style="background:var(--bg-primary);color:var(--text-primary);padding:12px;border-radius:var(--radius);width:260px;box-shadow:var(--shadow);border:1px solid var(--border);">' +
-            '<div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--text-primary);">Route to MathWorks Lakeside</div>' +
-            '<input type="text" id="trip-address" placeholder="Enter your address..." style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:inherit;">' +
-            '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">' +
-            '<label style="font-size:11px;white-space:nowrap;color:var(--text-secondary);">Arrive by:</label>' +
-            '<input type="time" id="trip-time" value="09:00" style="flex:1;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:inherit;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" id="trip-panel-header">' +
+            '<h3 style="margin:0;font-size:14px;color:var(--text-primary);"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#27ae60;margin-right:4px;animation:pulse 2s infinite;"></span>Trip Planner</h3>' +
+            '<div style="display:flex;align-items:center;gap:2px;margin-right:1px;">' +
+            '<a id="trip-hide-btn" href="#" title="Hide trip route" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;opacity:0.35;pointer-events:none;color:var(--text-primary);text-decoration:none;transition:background 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.12);">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>' +
+            '</svg></a>' +
+            '<a id="trip-trash-btn" href="#" title="Clear trip" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;opacity:0.35;pointer-events:none;color:var(--text-primary);text-decoration:none;transition:background 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.12);">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' +
+            '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>' +
+            '</svg></a>' +
             '</div>' +
-            '<button class="btn" id="trip-btn" style="margin-top:8px;width:100%;padding:7px;font-weight:500;">Find Route</button>' +
-            '<div id="trip-result" style="margin-top:10px;font-size:11px;max-height:300px;overflow-y:auto;color:var(--text-primary);"></div>' +
+            '<span id="trip-panel-arrow" style="font-size:12px;color:var(--text-muted);transition:transform 0.2s;">&#9660;</span>' +
             '</div>' +
+            '<div id="trip-panel-body" style="margin-top:10px;">' +
+            '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px;">From</label>' +
+            '<div style="position:relative;margin-bottom:4px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+            '<input type="text" id="trip-address" placeholder="Type an address or location..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:transparent;color:var(--text-primary);font-family:inherit;position:relative;z-index:0;">' +
+            '<div id="trip-address-ghost" style="position:absolute;top:0;left:0;right:0;padding:6px 8px;font-size:12px;font-family:inherit;color:var(--text-muted);opacity:0.5;pointer-events:none;white-space:nowrap;overflow:hidden;z-index:1;"></div>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:center;margin-bottom:-18px;">' +
+            '<button id="trip-swap-btn" title="Swap start and destination" style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;transition:background 0.15s;padding:0;position:relative;z-index:2;">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M4 17h12l-4 4"/><path d="M20 7H8l4-4"/>' +
+            '</svg>' +
+            '</button>' +
+            '</div>' +
+            '<label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:3px;">To</label>' +
+            '<div style="position:relative;margin-bottom:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+            '<input type="text" id="trip-dest" placeholder="Type an address or stop name..." value="" autocomplete="off" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:transparent;color:var(--text-primary);font-family:inherit;position:relative;z-index:0;">' +
+            '<div id="trip-dest-ghost" style="position:absolute;top:0;left:0;right:0;padding:6px 8px;font-size:12px;font-family:inherit;color:var(--text-muted);opacity:0.5;pointer-events:none;white-space:nowrap;overflow:hidden;z-index:1;"></div>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+            '<select id="trip-mode" style="padding:5px 4px;font-size:11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:inherit;">' +
+            '<option value="arrive">Arrive by</option>' +
+            '<option value="depart">Depart at</option>' +
+            '</select>' +
+            '<input type="time" id="trip-time" value="09:00" style="flex:1;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-primary);font-family:inherit;">' +
+            '<button class="btn" style="margin:0;flex:0 0 auto;padding:6px 10px;" onclick="var n=new Date();document.getElementById(\'trip-time\').value=String(n.getHours()).padStart(2,\'0\')+\':\'+String(n.getMinutes()).padStart(2,\'0\');planTrip();" title="Reset to now">Now</button>' +
+            '</div>' +
+            '<button class="btn" id="trip-btn" style="width:100%;padding:9px;background:var(--accent);color:white;border-color:var(--accent);font-weight:600;">Find Routes</button>' +
+            '<div id="trip-result" style="margin-top:12px;font-size:11px;max-height:300px;overflow-y:auto;color:var(--text-primary);"></div>' +
             '<div id="trip-clear-wrap" style="display:none;margin-top:8px;">' +
-            '<button class="btn" id="trip-clear-btn" style="width:100%;background:#e6194b;color:white;border-color:#e6194b;padding:8px;border-radius:var(--radius-sm);box-shadow:var(--shadow);font-weight:500;">Clear &amp; Show All Routes</button>' +
+            '<button class="btn" id="trip-clear-btn" style="width:100%;background:#e6194b;color:white;border-color:#e6194b;padding:9px;border-radius:var(--radius-sm);font-weight:600;">Clear &amp; Show All Routes</button>' +
+            '</div>' +
+            '</div>' +
             '</div>';
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.disableScrollPropagation(container);
@@ -2376,9 +2445,96 @@ var TripControl = L.Control.extend({
 new TripControl().addTo(map);
 document.getElementById('trip-btn').addEventListener('click', planTrip);
 document.getElementById('trip-clear-btn').addEventListener('click', clearTrip);
+document.getElementById('trip-swap-btn').addEventListener('click', function() {
+    var addrEl = document.getElementById('trip-address');
+    var destEl = document.getElementById('trip-dest');
+    var tmp = addrEl.value;
+    addrEl.value = destEl.value;
+    destEl.value = tmp;
+    document.getElementById('trip-address-ghost').innerHTML = '';
+    document.getElementById('trip-dest-ghost').innerHTML = '';
+});
 document.getElementById('trip-address').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') planTrip();
 });
+document.getElementById('trip-dest').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') planTrip();
+});
+document.getElementById('trip-panel-header').addEventListener('click', function() {
+    var body = document.getElementById('trip-panel-body');
+    var arrow = document.getElementById('trip-panel-arrow');
+    if (body.style.display === 'none') {
+        body.style.display = '';
+        arrow.style.transform = '';
+    } else {
+        body.style.display = 'none';
+        arrow.style.transform = 'rotate(-90deg)';
+    }
+});
+
+// Stop name autocomplete
+var stopNamesList = Object.values(stopLookup).map(function(s) { return s.name; });
+stopNamesList.sort();
+
+function findStopAutocomplete(typed) {
+    if (!typed || typed.length < 2) return '';
+    var lower = typed.toLowerCase();
+    for (var i = 0; i < stopNamesList.length; i++) {
+        if (stopNamesList[i].toLowerCase().indexOf(lower) === 0) {
+            return stopNamesList[i];
+        }
+    }
+    return '';
+}
+
+function setupAutocomplete(inputId, ghostId) {
+    var input = document.getElementById(inputId);
+    var ghost = document.getElementById(ghostId);
+    var currentSuggestion = '';
+
+    function updateGhost() {
+        var val = input.value;
+        var match = findStopAutocomplete(val);
+        if (match && val.length > 0) {
+            var remainder = match.substring(val.length);
+            ghost.innerHTML = '<span style="visibility:hidden;pointer-events:none;">' + val + '</span><span class="ghost-suggestion" style="cursor:pointer;pointer-events:auto;">' + remainder + '</span>';
+            ghost.style.pointerEvents = 'none';
+            currentSuggestion = match;
+        } else {
+            ghost.innerHTML = '';
+            currentSuggestion = '';
+        }
+    }
+
+    input.addEventListener('input', updateGhost);
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab' && currentSuggestion) {
+            e.preventDefault();
+            input.value = currentSuggestion;
+            ghost.innerHTML = '';
+            currentSuggestion = '';
+        }
+    });
+
+    input.addEventListener('blur', function(e) {
+        setTimeout(function() { ghost.innerHTML = ''; currentSuggestion = ''; }, 150);
+    });
+
+    input.addEventListener('focus', updateGhost);
+
+    ghost.addEventListener('click', function(e) {
+        if (e.target.classList.contains('ghost-suggestion') && currentSuggestion) {
+            input.value = currentSuggestion;
+            ghost.innerHTML = '';
+            currentSuggestion = '';
+            input.focus();
+        }
+    });
+}
+
+setupAutocomplete('trip-address', 'trip-address-ghost');
+setupAutocomplete('trip-dest', 'trip-dest-ghost');
 
 // Sort routes by short_name
 var sortedRoutes = Object.keys(routeInfo).sort(function(a, b) {
@@ -2409,29 +2565,6 @@ sortedRoutes.forEach(function(routeId, idx) {
     var shape0Id = routeShapesDir[routeId + '_0'];
     var shape1Id = routeShapesDir[routeId + '_1'];
     var fallbackShapeId = bestShapes[routeId];
-
-    // Draw route roads (OSRM-routed) faded/dashed on top for comparison
-    if (shape0Id && shapeData[shape0Id]) {
-        var routeRoads0 = L.polyline(shapeData[shape0Id], {
-            color: color, weight: 3, opacity: 0.35, dashArray: '6 4'
-        });
-        routeRoads0._isRouteRoads = true;
-        routeRoads0.addTo(group);
-    }
-    if (shape1Id && shapeData[shape1Id]) {
-        var routeRoads1 = L.polyline(shapeData[shape1Id], {
-            color: color, weight: 3, opacity: 0.35, dashArray: '6 4'
-        });
-        routeRoads1._isRouteRoads = true;
-        routeRoads1.addTo(group);
-    }
-    if (!shape0Id && !shape1Id && fallbackShapeId && shapeData[fallbackShapeId]) {
-        var routeRoadsFb = L.polyline(shapeData[fallbackShapeId], {
-            color: color, weight: 3, opacity: 0.35, dashArray: '6 4'
-        });
-        routeRoadsFb._isRouteRoads = true;
-        routeRoadsFb.addTo(group);
-    }
 
     if (hasVcData) {
         // Use high-fidelity VC route data as route path
@@ -2829,15 +2962,6 @@ function toggleRouteVisibility(routeId, visible) {
         if (routeLayers[routeId]) {
             routeLayers[routeId].addTo(map);
             routeActive[routeId] = true;
-            if (tripActive) {
-                // Hide non-route-roads layers when trip is shown
-                routeLayers[routeId].eachLayer(function(layer) {
-                    if (!layer._isRouteRoads && !layer._isArrowMarker && !layer._isDirectionalMarker) {
-                        if (layer.setStyle) layer.setStyle({opacity: 0, fillOpacity: 0});
-                        if (layer._icon) layer._icon.style.display = 'none';
-                    }
-                });
-            }
         }
     } else {
         if (routeLayers[routeId]) {
@@ -2849,12 +2973,33 @@ function toggleRouteVisibility(routeId, visible) {
 
 function showAll() {
     sortedRoutes.forEach(function(id) {
-        if (!routeActive[id] && routeLayers[id]) {
-            routeLayers[id].addTo(map);
-            routeActive[id] = true;
+        if (routeLayers[id]) {
+            if (!routeActive[id]) {
+                routeLayers[id].addTo(map);
+                routeActive[id] = true;
+            }
+            resetRouteLayerStyles(id);
         }
     });
     document.querySelectorAll('.route-checkbox').forEach(function(cb) { cb.checked = true; });
+}
+
+function resetRouteLayerStyles(routeId) {
+    if (!routeLayers[routeId]) return;
+    var color = routeColors[sortedRoutes.indexOf(routeId) % routeColors.length];
+    routeLayers[routeId].eachLayer(function(layer) {
+        if (layer._isArrowMarker || layer._isDirectionalMarker) return;
+        if (layer instanceof L.CircleMarker) {
+            var isOrphan = layer._isOrphanStop;
+            layer.setStyle({
+                fillOpacity: isOrphan && !orphanStopsVisible ? 0 : 0.9,
+                opacity: isOrphan && !orphanStopsVisible ? 0 : 1
+            });
+        } else if (layer.setStyle) {
+            layer.setStyle({ opacity: 0.85, weight: 4, dashArray: null });
+        }
+        if (layer._icon) layer._icon.style.display = '';
+    });
 }
 
 function hideAll() {
@@ -3025,10 +3170,11 @@ function formatTime(minutes) {
     return h12 + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
 }
 
-async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
-    var DEST = DEST_STOP_ID;
+async function findTimetableTrips(startStopId, timeMin, walkCache, destStopId, mode) {
+    var DEST = destStopId || DEST_STOP_ID;
     var TRANSFER_BUFFER = 2;
     var results = [];
+    var isDepart = (mode === 'depart');
 
     // Index: for each stop, which trips serve it and at what index/time
     // stopIndex[stopId] = [{tripId, idx, depMin}]
@@ -3048,18 +3194,20 @@ async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
         var stops = tripStopTimes[tripId];
         for (var i = 0; i < stops.length; i++) {
             if (stops[i][0] === startStopId) {
+                if (isDepart && stops[i][1] < timeMin) break;
                 startTrips.push({ tripId: tripId, startIdx: i, departMin: stops[i][1], stops: stops });
                 break;
             }
         }
     }
 
-    // Trips arriving at DEST by arriveByMin
+    // Trips arriving at DEST
     var destTrips = [];
     for (var tripId in tripStopTimes) {
         var stops = tripStopTimes[tripId];
         for (var i = 0; i < stops.length; i++) {
-            if (stops[i][0] === DEST && stops[i][1] <= arriveByMin) {
+            if (stops[i][0] === DEST) {
+                if (!isDepart && stops[i][1] > timeMin) break;
                 destTrips.push({ tripId: tripId, destIdx: i, arriveMin: stops[i][1], stops: stops });
                 break;
             }
@@ -3070,7 +3218,8 @@ async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
     for (var s = 0; s < startTrips.length; s++) {
         var st = startTrips[s];
         for (var i = st.startIdx + 1; i < st.stops.length; i++) {
-            if (st.stops[i][0] === DEST && st.stops[i][1] <= arriveByMin) {
+            if (st.stops[i][0] === DEST) {
+                if (!isDepart && st.stops[i][1] > timeMin) break;
                 results.push({
                     type: 'direct',
                     tripId: st.tripId,
@@ -3121,19 +3270,18 @@ async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
             var xferIdx = stopIdxMap[xferStop];
             var walkMinToDest = getWalkMin(xferIdx, destIdx);
             var walkArrival = xferArriveMin + walkMinToDest;
-            if (walkArrival <= arriveByMin) {
-                results.push({
-                    type: 'walk-finish',
-                    legs: [
-                        { tripId: st.tripId, route: tripMeta[st.tripId][0], dir: tripMeta[st.tripId][1],
-                          departMin: st.departMin, arriveMin: xferArriveMin,
-                          stops: st.stops.slice(st.startIdx, ti + 1).map(function(x) { return x[0]; }) }
-                    ],
-                    walkLeg: { from: xferStop, to: DEST, walkMin: walkMinToDest, dist: getWalkDist(xferIdx, destIdx) },
-                    departMin: st.departMin,
-                    arriveMin: walkArrival
-                });
-            }
+            if (!isDepart && walkArrival > timeMin) continue;
+            results.push({
+                type: 'walk-finish',
+                legs: [
+                    { tripId: st.tripId, route: tripMeta[st.tripId][0], dir: tripMeta[st.tripId][1],
+                      departMin: st.departMin, arriveMin: xferArriveMin,
+                      stops: st.stops.slice(st.startIdx, ti + 1).map(function(x) { return x[0]; }) }
+                ],
+                walkLeg: { from: xferStop, to: DEST, walkMin: walkMinToDest, dist: getWalkDist(xferIdx, destIdx) },
+                departMin: st.departMin,
+                arriveMin: walkArrival
+            });
         }
         if (results.length > 200) break;
     }
@@ -3287,26 +3435,582 @@ async function findTimetableTrips(startStopId, arriveByMin, walkCache) {
         if (results.length > 200) break;
     }
 
-    // Sort by latest departure (user wants to leave as late as possible)
-    results.sort(function(a, b) { return b.departMin - a.departMin; });
+    // Three-transfer trips: leg1 from start, leg2 middle1, leg3 middle2, leg4 to DEST
+    for (var s = 0; s < startTrips.length; s++) {
+        var st = startTrips[s];
+        for (var ti = st.startIdx + 1; ti < st.stops.length; ti++) {
+            var xfer1Stop = st.stops[ti][0];
+            if (xfer1Stop === DEST) break;
+            var xfer1ArriveMin = st.stops[ti][1];
+
+            var mid1Entries = stopIndex[xfer1Stop];
+            if (!mid1Entries) continue;
+
+            for (var m1 = 0; m1 < mid1Entries.length; m1++) {
+                var me1 = mid1Entries[m1];
+                if (me1.tripId === st.tripId) continue;
+                if (me1.depMin < xfer1ArriveMin + TRANSFER_BUFFER) continue;
+
+                var mid1Stops = tripStopTimes[me1.tripId];
+                for (var mi1 = me1.idx + 1; mi1 < mid1Stops.length; mi1++) {
+                    var xfer2Stop = mid1Stops[mi1][0];
+                    if (xfer2Stop === DEST) break;
+                    var xfer2ArriveMin = mid1Stops[mi1][1];
+
+                    var mid2Entries = stopIndex[xfer2Stop];
+                    if (!mid2Entries) continue;
+
+                    for (var m2 = 0; m2 < mid2Entries.length; m2++) {
+                        var me2 = mid2Entries[m2];
+                        if (me2.tripId === me1.tripId || me2.tripId === st.tripId) continue;
+                        if (me2.depMin < xfer2ArriveMin + TRANSFER_BUFFER) continue;
+
+                        var mid2Stops = tripStopTimes[me2.tripId];
+                        for (var mi2 = me2.idx + 1; mi2 < mid2Stops.length; mi2++) {
+                            var xfer3Stop = mid2Stops[mi2][0];
+                            if (xfer3Stop === DEST) break;
+                            var xfer3ArriveMin = mid2Stops[mi2][1];
+
+                            var destEntries = destTripByStop[xfer3Stop];
+                            if (!destEntries) continue;
+
+                            for (var de = 0; de < destEntries.length; de++) {
+                                var dEntry = destEntries[de];
+                                var dt = destTrips[dEntry.dtIdx];
+                                if (dt.tripId === me2.tripId || dt.tripId === me1.tripId || dt.tripId === st.tripId) continue;
+                                if (dEntry.depMin < xfer3ArriveMin + TRANSFER_BUFFER) continue;
+
+                                results.push({
+                                    type: 'transfer3',
+                                    legs: [
+                                        { tripId: st.tripId, route: tripMeta[st.tripId][0], dir: tripMeta[st.tripId][1],
+                                          departMin: st.departMin, arriveMin: xfer1ArriveMin,
+                                          stops: st.stops.slice(st.startIdx, ti + 1).map(function(x) { return x[0]; }) },
+                                        { tripId: me1.tripId, route: tripMeta[me1.tripId][0], dir: tripMeta[me1.tripId][1],
+                                          departMin: me1.depMin, arriveMin: xfer2ArriveMin,
+                                          stops: mid1Stops.slice(me1.idx, mi1 + 1).map(function(x) { return x[0]; }) },
+                                        { tripId: me2.tripId, route: tripMeta[me2.tripId][0], dir: tripMeta[me2.tripId][1],
+                                          departMin: me2.depMin, arriveMin: xfer3ArriveMin,
+                                          stops: mid2Stops.slice(me2.idx, mi2 + 1).map(function(x) { return x[0]; }) },
+                                        { tripId: dt.tripId, route: tripMeta[dt.tripId][0], dir: tripMeta[dt.tripId][1],
+                                          departMin: dEntry.depMin, arriveMin: dt.arriveMin,
+                                          stops: dt.stops.slice(dEntry.stopIdx, dt.destIdx + 1).map(function(x) { return x[0]; }) }
+                                    ],
+                                    departMin: st.departMin,
+                                    arriveMin: dt.arriveMin
+                                });
+                                break;
+                            }
+                            if (results.length > 300) break;
+                        }
+                        if (results.length > 300) break;
+                    }
+                    if (results.length > 300) break;
+                }
+                if (results.length > 300) break;
+            }
+            if (results.length > 300) break;
+        }
+        if (results.length > 300) break;
+    }
+
+    if (isDepart) {
+        results.sort(function(a, b) { return a.arriveMin - b.arriveMin; });
+    } else {
+        results.sort(function(a, b) { return b.departMin - a.departMin; });
+    }
     return results;
+}
+
+var planTripOptions = [];
+var planTripSelectedIdx = -1;
+var planTripUserLat = null, planTripUserLon = null;
+
+function getTotalWalkDist(chosen) {
+    var total = chosen.walkDist || 0;
+    var trip = chosen.trip;
+    if (trip.walkLeg) total += trip.walkLeg.dist;
+    return total;
+}
+
+function pickBestTrip(allTrips, mode, nearestStopId, tripMode) {
+    var filtered = allTrips.filter(function(t) {
+        if (mode === 'minimal') {
+            if (t.startStop !== nearestStopId) return false;
+            if (t.trip.type === 'direct') return true;
+            if (t.trip.type === 'transfer' || t.trip.type === 'transfer2' || t.trip.type === 'transfer3') {
+                return !t.trip.walkLeg || t.trip.walkLeg.dist <= 100;
+            }
+            if (t.trip.type === 'walk-finish') {
+                return t.trip.walkLeg && t.trip.walkLeg.dist <= 200;
+            }
+            return false;
+        } else if (mode === 'moderate') {
+            return getTotalWalkDist(t) <= 1000;
+        }
+        return true;
+    });
+    if (filtered.length === 0) return null;
+    if (tripMode === 'depart') {
+        filtered.sort(function(a, b) { return a.arriveMin - b.arriveMin; });
+    } else {
+        filtered.sort(function(a, b) { return b.effectiveDepart - a.effectiveDepart; });
+    }
+    return filtered[0];
+}
+
+function buildTripSegments(chosen) {
+    var best = chosen.trip;
+    var segments = [];
+    if (best.type === 'direct') {
+        segments.push({ route: best.route, routeName: routeInfo[best.route] ? routeInfo[best.route].short_name : '?', dir: best.dir, stops: best.stops, departMin: best.departMin, arriveMin: best.arriveMin, tripId: best.tripId });
+    } else if (best.legs) {
+        for (var li = 0; li < best.legs.length; li++) {
+            var leg = best.legs[li];
+            segments.push({ route: leg.route, routeName: routeInfo[leg.route] ? routeInfo[leg.route].short_name : '?', dir: leg.dir, stops: leg.stops, departMin: leg.departMin, arriveMin: leg.arriveMin, tripId: leg.tripId });
+        }
+    }
+    return segments;
+}
+
+function buildOptionSummaryHtml(chosen, label, optIdx) {
+    var best = chosen.trip;
+    if (best.type === 'walk-only') {
+        return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-primary);">' +
+            '<span style="font-weight:600;min-width:45px;">' + formatTime(best.departMin) + '</span>' +
+            '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:#555;">Walk</span>' +
+            '<span>Walk to destination</span></div>' +
+            '<div style="font-size:10px;color:var(--text-secondary);margin-top:3px;">' + Math.round(chosen.walkDist) + 'm walk &bull; ' + label + '</div>';
+    }
+    var segments = buildTripSegments(chosen);
+    var routeBadges = '';
+    for (var i = 0; i < segments.length; i++) {
+        var seg = segments[i];
+        var segColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length] || '#4363d8';
+        if (i > 0) routeBadges += '<span style="font-size:10px;color:var(--text-muted);">→</span>';
+        routeBadges += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:' + segColor + ';">' + seg.routeName + '</span>';
+    }
+    var totalWalk = getTotalWalkDist(chosen);
+    var walkNote = totalWalk > 0 ? Math.round(totalWalk) + 'm walk' : 'No extra walking';
+    return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:11px;color:var(--text-primary);">' +
+        '<span style="font-weight:600;min-width:45px;">' + formatTime(chosen.effectiveDepart) + '</span>' +
+        routeBadges +
+        '</div>' +
+        '<div id="trip-summary-status-' + optIdx + '" style="margin-top:3px;"></div>' +
+        '<div style="font-size:10px;color:var(--text-secondary);margin-top:3px;">Arrive ' + formatTime(chosen.arriveMin) + ' &bull; ' + walkNote + ' &bull; ' + label + '</div>';
+}
+
+function estimateBusDelay(busLat, busLon, tripStops, nowMin) {
+    // Find which segment the bus is on by finding the closest stop
+    var closestIdx = 0, closestDist = Infinity;
+    for (var i = 0; i < tripStops.length; i++) {
+        var st = stopLookup[tripStops[i]];
+        if (!st) continue;
+        var d = haversine(busLat, busLon, st.lat, st.lon);
+        if (d < closestDist) {
+            closestDist = d;
+            closestIdx = i;
+        }
+    }
+    // Get the scheduled time for this stop from tripStopTimes
+    // We need to find the trip that matches these stops
+    // Instead, interpolate: the bus should be at a position proportional to elapsed time
+    // Use the segment's scheduled times
+    return { closestIdx: closestIdx, closestDist: closestDist };
+}
+
+async function updateLiveBusStatus(idx) {
+    var chosen = planTripOptions[idx];
+    if (!chosen) return;
+    var best = chosen.trip;
+    if (best.type === 'walk-only') return;
+
+    var now = new Date();
+    var nowMin = now.getHours() * 60 + now.getMinutes();
+
+    var segments = buildTripSegments(chosen);
+    var summaryEl = document.getElementById('trip-summary-status-' + idx);
+    var summarySet = false;
+
+    try {
+        var resp = await fetch('/api/vehicles');
+        var vehicles = await resp.json();
+
+        for (var s = 0; s < segments.length; s++) {
+            var seg = segments[s];
+            var segEl = document.getElementById('trip-seg-status-' + idx + '-' + s);
+
+            // If this segment's time window is not currently active (with 30 min buffer), show next-day note
+            if (nowMin < seg.departMin - 30 || nowMin > seg.arriveMin + 30) {
+                var nextDayBadge = '<span style="display:inline-block;margin-left:6px;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;color:var(--text-secondary);background:var(--bg-secondary);border:1px solid var(--border);letter-spacing:0.2px;">Tomorrow\'s timetable</span>';
+                if (segEl) segEl.innerHTML = nextDayBadge;
+                if (!summarySet && summaryEl) { summaryEl.innerHTML = nextDayBadge; summarySet = true; }
+                continue;
+            }
+
+            var routeLongName = routeInfo[seg.route] ? routeInfo[seg.route].long_name : '';
+            var routeShortName = routeInfo[seg.route] ? routeInfo[seg.route].short_name : '';
+
+            var routeBuses = vehicles.filter(function(v) {
+                return v.Active && v.Lat && v.Long &&
+                    (v.Route === routeLongName || v.Route === routeShortName || v.Route === 'RT' + routeShortName);
+            });
+
+            if (routeBuses.length === 0) continue;
+
+            var bestBus = null, bestInfo = null;
+            for (var b = 0; b < routeBuses.length; b++) {
+                var info = estimateBusDelay(routeBuses[b].Lat, routeBuses[b].Long, seg.stops, nowMin);
+                if (!bestBus || info.closestDist < bestInfo.closestDist) {
+                    bestBus = routeBuses[b];
+                    bestInfo = info;
+                }
+            }
+
+            if (!bestBus) continue;
+
+            var matchedTripId = seg.tripId;
+            if (!matchedTripId || !tripStopTimes[matchedTripId]) continue;
+
+            var tripTimes = tripStopTimes[matchedTripId];
+            var closestStopId = seg.stops[bestInfo.closestIdx];
+            var scheduledMin = null;
+            for (var t = 0; t < tripTimes.length; t++) {
+                if (tripTimes[t][0] === closestStopId) {
+                    scheduledMin = tripTimes[t][1];
+                    break;
+                }
+            }
+
+            if (scheduledMin === null) continue;
+
+            var diffMin = nowMin - scheduledMin;
+            var statusText, statusColor;
+            if (Math.abs(diffMin) <= 2) {
+                statusText = 'On time';
+                statusColor = '#27ae60';
+            } else if (diffMin < 0) {
+                statusText = Math.abs(diffMin) + ' min early';
+                statusColor = '#4363d8';
+            } else {
+                statusText = diffMin + ' min late';
+                statusColor = '#e74c3c';
+            }
+
+            var badge = '<span style="display:inline-block;margin-left:6px;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;color:white;background:' + statusColor + ';letter-spacing:0.2px;">' + statusText + '</span>';
+            if (segEl) segEl.innerHTML = badge;
+            if (!summarySet && summaryEl) { summaryEl.innerHTML = badge; summarySet = true; }
+
+            // Draw faded full route for this segment's bus route (solid, not dashed)
+            if (tripPath) {
+                var segColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length];
+                var rInfo = routeInfo[seg.route];
+                if (rInfo) {
+                    var vcKey = (vcRouteData['RT' + rInfo.short_name]) ? 'RT' + rInfo.short_name : rInfo.short_name;
+                    if (vcRouteData && vcRouteData[vcKey] && vcRouteData[vcKey].length > 1) {
+                        L.polyline(vcRouteData[vcKey], { color: segColor, weight: 3, opacity: 0.3 }).addTo(tripPath);
+                    }
+                }
+            }
+        }
+    } catch (e) {}
+}
+
+function buildOptionDetailHtml(chosen, optIdx) {
+    var best = chosen.trip;
+    if (best.type === 'walk-only') {
+        return '<div style="padding:8px 0;font-size:11px;color:var(--text-primary);">' +
+            '<b>Walk directly to MathWorks Lakeside</b><br>' +
+            '<span style="color:var(--text-secondary);">' + Math.round(chosen.walkDist) + 'm (' + chosen.walkMin + ' min)</span><br>' +
+            '<span style="color:var(--text-muted);">Leave by ' + formatTime(best.departMin) + '</span></div>';
+    }
+    var segments = buildTripSegments(chosen);
+    var walkLeg = best.walkLeg || null;
+    var nearestName = stopLookup[chosen.startStop] ? stopLookup[chosen.startStop].name : '?';
+    var html = '<div style="padding:8px 0;font-size:11px;">';
+    html += '<div style="color:var(--text-primary);margin-bottom:4px;"><b>Walk to:</b> ' + nearestName + ' (' + Math.round(chosen.walkDist) + 'm, ' + chosen.walkMin + ' min)</div>';
+    html += '<div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;"><b>Depart:</b> ' + formatTime(best.departMin) + ' &bull; <b>Arrive:</b> ' + formatTime(best.arriveMin) + '</div>';
+    for (var s = 0; s < segments.length; s++) {
+        var seg = segments[s];
+        var fromName = stopLookup[seg.stops[0]] ? stopLookup[seg.stops[0]].name : '?';
+        var toName = stopLookup[seg.stops[seg.stops.length - 1]] ? stopLookup[seg.stops[seg.stops.length - 1]].name : '?';
+        var dirLabel = seg.dir === 0 ? 'E' : 'W';
+        var segDispColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length];
+        html += '<div style="margin:4px 0;padding:6px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ' + segDispColor + ';">';
+        html += '<b>Route ' + seg.routeName + '</b> (' + dirLabel + ') <span id="trip-seg-status-' + optIdx + '-' + s + '"></span><br>';
+        html += '<span style="color:var(--text-secondary);">' + fromName + ' &rarr; ' + toName + '</span><br>';
+        html += '<span style="color:var(--text-muted);">' + formatTime(seg.departMin) + ' &rarr; ' + formatTime(seg.arriveMin) + ' &bull; ' + seg.stops.length + ' stops</span>';
+        html += '</div>';
+        if (s < segments.length - 1) {
+            if (walkLeg && s === 0 && (best.type === 'walk-transfer' || best.type === 'walk-finish')) {
+                html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm to ' + stopLookup[walkLeg.to].name + ' (' + walkLeg.walkMin + ' min)</div>';
+            } else {
+                var waitMin = segments[s + 1].departMin - seg.arriveMin;
+                html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Transfer at ' + (stopLookup[seg.stops[seg.stops.length - 1]] ? stopLookup[seg.stops[seg.stops.length - 1]].name : '?') + ' (' + waitMin + ' min wait)</div>';
+            }
+        }
+    }
+    if (walkLeg && best.type === 'walk-finish') {
+        html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm (' + walkLeg.walkMin + ' min)</div>';
+    }
+    html += '<div style="margin-top:4px;color:var(--text-primary);"><b>Arrive:</b> MathWorks Lakeside at ' + formatTime(best.arriveMin) + '</div>';
+    html += '</div>';
+    return html;
+}
+
+async function selectTripOption(idx) {
+    if (planTripSelectedIdx === idx) {
+        // Collapse
+        var detailDiv = document.getElementById('trip-option-detail-' + idx);
+        if (detailDiv) detailDiv.style.display = 'none';
+        var cards = document.querySelectorAll('#trip-result .trip-option-card');
+        if (cards[idx]) { cards[idx].style.background = 'var(--bg-primary)'; cards[idx].style.borderColor = 'var(--border)'; }
+        planTripSelectedIdx = -1;
+        updateTripButtons();
+        if (tripPath) { map.removeLayer(tripPath); tripPath = null; }
+        showAll();
+        return;
+    }
+
+    // Deselect previous
+    if (planTripSelectedIdx >= 0) {
+        var prevDetail = document.getElementById('trip-option-detail-' + planTripSelectedIdx);
+        if (prevDetail) prevDetail.style.display = 'none';
+        var cards = document.querySelectorAll('#trip-result .trip-option-card');
+        if (cards[planTripSelectedIdx]) { cards[planTripSelectedIdx].style.background = 'var(--bg-primary)'; cards[planTripSelectedIdx].style.borderColor = 'var(--border)'; }
+    }
+
+    planTripSelectedIdx = idx;
+    updateTripButtons();
+    var cards = document.querySelectorAll('#trip-result .trip-option-card');
+    if (cards[idx]) { cards[idx].style.background = 'var(--bg-selected)'; cards[idx].style.borderColor = 'var(--accent)'; }
+    var detailDiv = document.getElementById('trip-option-detail-' + idx);
+    if (detailDiv) detailDiv.style.display = 'block';
+
+    // Fetch live bus status for this option
+    updateLiveBusStatus(idx);
+
+    // Draw route on map
+    var chosen = planTripOptions[idx];
+    if (!chosen) return;
+    var best = chosen.trip;
+    var lat = planTripUserLat, lon = planTripUserLon;
+
+    hideAll();
+    if (tripMarker) map.removeLayer(tripMarker);
+    if (tripPath) map.removeLayer(tripPath);
+    tripPath = L.layerGroup();
+
+    var allCoords = [[lat, lon]];
+
+    if (best.type === 'walk-only') {
+        var dest = stopLookup[DEST_STOP_ID];
+        var walkUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + dest.lon + ',' + dest.lat + '?geometries=geojson&overview=full';
+        try {
+            var wResp = await fetch(walkUrl);
+            var wData = await wResp.json();
+            if (wData.code === 'Ok' && wData.routes && wData.routes.length > 0) {
+                var wCoords = wData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                L.polyline(wCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+                wCoords.forEach(function(c) { allCoords.push(c); });
+            }
+        } catch (e) {
+            L.polyline([[lat, lon], [dest.lat, dest.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+        }
+        L.circleMarker([lat, lon], { radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1 }).bindTooltip('You', {permanent: true}).addTo(tripPath);
+        L.circleMarker([dest.lat, dest.lon], { radius: 7, color: 'white', weight: 3, fillColor: '#228B22', fillOpacity: 1 }).bindTooltip(dest.name || 'Destination', {permanent: true}).addTo(tripPath);
+        tripPath.addTo(map);
+        map.fitBounds(L.latLngBounds(allCoords), {padding: [50, 50]});
+        return;
+    }
+
+    var segments = buildTripSegments(chosen);
+    var walkLeg = best.walkLeg || null;
+
+    for (var s = 0; s < segments.length; s++) {
+        var seg = segments[s];
+        var segColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length];
+        var stopCoords = seg.stops.map(function(sid) { return [stopLookup[sid].lat, stopLookup[sid].lon]; });
+        var segStartCoord = null, segEndCoord = null;
+
+        var vcSlice = getVcSliceForSegment(seg.route, seg.stops);
+        if (vcSlice) {
+            L.polyline(vcSlice, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripPath);
+            vcSlice.forEach(function(c) { allCoords.push(c); });
+            segStartCoord = vcSlice[0];
+            segEndCoord = vcSlice[vcSlice.length - 1];
+        } else {
+            var coordStr = stopCoords.map(function(p) { return p[1] + ',' + p[0]; }).join(';');
+            var osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + coordStr + '?geometries=geojson&overview=full';
+            try {
+                var osrmResp = await fetch(osrmUrl);
+                var osrmData = await osrmResp.json();
+                if (osrmData.code === 'Ok' && osrmData.routes && osrmData.routes.length > 0) {
+                    var routedCoords = osrmData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                    L.polyline(routedCoords, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripPath);
+                    routedCoords.forEach(function(c) { allCoords.push(c); });
+                    segStartCoord = routedCoords[0];
+                    segEndCoord = routedCoords[routedCoords.length - 1];
+                } else {
+                    L.polyline(stopCoords, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripPath);
+                    stopCoords.forEach(function(c) { allCoords.push(c); });
+                    segStartCoord = stopCoords[0];
+                    segEndCoord = stopCoords[stopCoords.length - 1];
+                }
+            } catch (e) {
+                L.polyline(stopCoords, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripPath);
+                stopCoords.forEach(function(c) { allCoords.push(c); });
+                segStartCoord = stopCoords[0];
+                segEndCoord = stopCoords[stopCoords.length - 1];
+            }
+        }
+
+        // Connect polyline start to first stop if they're far apart
+        var firstStop = stopLookup[seg.stops[0]];
+        if (segStartCoord && haversine(segStartCoord[0], segStartCoord[1], firstStop.lat, firstStop.lon) > 100) {
+            var connStartUrl = 'https://router.project-osrm.org/route/v1/driving/' + firstStop.lon + ',' + firstStop.lat + ';' + segStartCoord[1] + ',' + segStartCoord[0] + '?geometries=geojson&overview=full';
+            try {
+                var csResp = await fetch(connStartUrl);
+                var csData = await csResp.json();
+                if (csData.code === 'Ok' && csData.routes && csData.routes.length > 0) {
+                    var csCoords = csData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                    L.polyline(csCoords, { color: segColor, weight: 4, dashArray: '6 8', opacity: 0.7 }).addTo(tripPath);
+                    csCoords.forEach(function(c) { allCoords.push(c); });
+                }
+            } catch (e) {}
+        }
+
+        // Connect polyline end to last stop if they're far apart
+        var lastStop = stopLookup[seg.stops[seg.stops.length - 1]];
+        if (segEndCoord && haversine(segEndCoord[0], segEndCoord[1], lastStop.lat, lastStop.lon) > 100) {
+            var connEndUrl = 'https://router.project-osrm.org/route/v1/driving/' + segEndCoord[1] + ',' + segEndCoord[0] + ';' + lastStop.lon + ',' + lastStop.lat + '?geometries=geojson&overview=full';
+            try {
+                var ceResp = await fetch(connEndUrl);
+                var ceData = await ceResp.json();
+                if (ceData.code === 'Ok' && ceData.routes && ceData.routes.length > 0) {
+                    var ceCoords = ceData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                    L.polyline(ceCoords, { color: segColor, weight: 4, dashArray: '6 8', opacity: 0.7 }).addTo(tripPath);
+                    ceCoords.forEach(function(c) { allCoords.push(c); });
+                }
+            } catch (e) {}
+        }
+
+        seg.stops.forEach(function(sid) {
+            var st = stopLookup[sid];
+            L.circleMarker([st.lat, st.lon], { radius: 5, color: 'white', weight: 2, fillColor: segColor, fillOpacity: 1 }).bindTooltip(st.name, {permanent: false}).addTo(tripPath);
+        });
+    }
+
+    if (walkLeg) {
+        var wFrom = stopLookup[walkLeg.from];
+        var wTo = stopLookup[walkLeg.to];
+        var walkCoordStr = wFrom.lon + ',' + wFrom.lat + ';' + wTo.lon + ',' + wTo.lat;
+        var walkOsrmUrl = 'https://router.project-osrm.org/route/v1/foot/' + walkCoordStr + '?geometries=geojson&overview=full';
+        try {
+            var walkResp = await fetch(walkOsrmUrl);
+            var walkData = await walkResp.json();
+            if (walkData.code === 'Ok' && walkData.routes && walkData.routes.length > 0) {
+                var walkCoords = walkData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+                L.polyline(walkCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+                walkCoords.forEach(function(c) { allCoords.push(c); });
+            }
+        } catch (e) {}
+    }
+
+    var nearStop = stopLookup[chosen.startStop];
+    var walkToStopUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + nearStop.lon + ',' + nearStop.lat + '?geometries=geojson&overview=full';
+    try {
+        var wtsResp = await fetch(walkToStopUrl);
+        var wtsData = await wtsResp.json();
+        if (wtsData.code === 'Ok' && wtsData.routes && wtsData.routes.length > 0) {
+            var wtsCoords = wtsData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
+            L.polyline(wtsCoords, { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
+            wtsCoords.forEach(function(c) { allCoords.push(c); });
+        }
+    } catch (e) {}
+
+    L.circleMarker([lat, lon], { radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1 }).bindTooltip('You', {permanent: true}).addTo(tripPath);
+    var dest = stopLookup[DEST_STOP_ID];
+    L.circleMarker([dest.lat, dest.lon], { radius: 7, color: 'white', weight: 3, fillColor: '#228B22', fillOpacity: 1 }).bindTooltip('MathWorks Lakeside', {permanent: true}).addTo(tripPath);
+
+    tripPath.addTo(map);
+    map.fitBounds(L.latLngBounds(allCoords), {padding: [50, 50]});
+}
+
+function findStopByName(name) {
+    var lower = name.toLowerCase().trim();
+    for (var id in stopLookup) {
+        if (stopLookup[id].name.toLowerCase() === lower) return id;
+    }
+    for (var id in scheduleStops) {
+        if (scheduleStops[id].name.toLowerCase() === lower) return id;
+    }
+    for (var id in stopLookup) {
+        if (stopLookup[id].name.toLowerCase().indexOf(lower) !== -1) return id;
+    }
+    for (var id in scheduleStops) {
+        if (scheduleStops[id].name.toLowerCase().indexOf(lower) !== -1) return id;
+    }
+    return null;
 }
 
 async function planTrip() {
     var resultDiv = document.getElementById('trip-result');
     var address = document.getElementById('trip-address').value.trim();
+    var destInput = document.getElementById('trip-dest').value.trim();
     var timeVal = document.getElementById('trip-time').value;
     if (!address) {
-        resultDiv.innerHTML = '<span style="color:red;">Please enter an address.</span>';
+        resultDiv.innerHTML = '<span style="color:red;">Please enter a starting address.</span>';
+        return;
+    }
+    if (!destInput) {
+        resultDiv.innerHTML = '<span style="color:red;">Please enter a destination.</span>';
         return;
     }
     if (!timeVal) {
-        resultDiv.innerHTML = '<span style="color:red;">Please enter an arrival time.</span>';
+        resultDiv.innerHTML = '<span style="color:red;">Please enter a time.</span>';
         return;
     }
 
     var timeParts = timeVal.split(':');
-    var arriveByMin = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+    var tripTimeMin = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+    var tripMode = document.getElementById('trip-mode').value;
+
+    resultDiv.innerHTML = '<em>Resolving destination...</em>';
+
+    var resolvedDestId = findStopByName(destInput);
+    var destWalkInfo = '';
+    if (!resolvedDestId) {
+        try {
+            var destGeoUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' +
+                encodeURIComponent(destInput + ', Massachusetts') + '&limit=1';
+            var destGeoResp = await fetch(destGeoUrl, {headers: {'User-Agent': 'MWRTA-TripPlanner/1.0'}});
+            var destGeoResults = await destGeoResp.json();
+            if (!destGeoResults || destGeoResults.length === 0) {
+                resultDiv.innerHTML = '<span style="color:red;">Could not find that destination. Try a stop name or more specific address.</span>';
+                return;
+            }
+            var destLat = parseFloat(destGeoResults[0].lat);
+            var destLon = parseFloat(destGeoResults[0].lon);
+            var nearestDest = findNearestStop(destLat, destLon);
+            if (!nearestDest.id) {
+                resultDiv.innerHTML = '<span style="color:red;">No stops found near that destination.</span>';
+                return;
+            }
+            resolvedDestId = nearestDest.id;
+            var destWalkMeters = Math.round(nearestDest.dist);
+            var destWalkMin = Math.ceil(destWalkMeters / 80);
+            var destStopName = stopLookup[nearestDest.id] ? stopLookup[nearestDest.id].name : (scheduleStops[nearestDest.id] ? scheduleStops[nearestDest.id].name : '?');
+            if (destWalkMeters > 50) {
+                destWalkInfo = '<div style="margin-bottom:6px;font-size:10px;color:var(--text-secondary);">Then walk ~' + destWalkMeters + 'm (~' + destWalkMin + ' min) from <b>' + destStopName + '</b> to destination.</div>';
+            }
+        } catch (e) {
+            resultDiv.innerHTML = '<span style="color:red;">Destination lookup failed: ' + e.message + '</span>';
+            return;
+        }
+    }
+
+    DEST_STOP_ID = resolvedDestId;
 
     resultDiv.innerHTML = '<em>Geocoding address...</em>';
 
@@ -3324,6 +4028,8 @@ async function planTrip() {
 
         var lat = parseFloat(results[0].lat);
         var lon = parseFloat(results[0].lon);
+        planTripUserLat = lat;
+        planTripUserLon = lon;
 
         var nearest = findNearestStop(lat, lon);
         if (!nearest.id) {
@@ -3331,15 +4037,15 @@ async function planTrip() {
             return;
         }
 
-        if (nearest.id === DEST_STOP_ID) {
-            resultDiv.innerHTML = '<b>You are already at MathWorks Lakeside!</b> (' + Math.round(nearest.dist) + 'm away)';
+        if (nearest.id === resolvedDestId) {
+            var destName = stopLookup[resolvedDestId] ? stopLookup[resolvedDestId].name : (scheduleStops[resolvedDestId] ? scheduleStops[resolvedDestId].name : 'destination');
+            resultDiv.innerHTML = '<b>You are already at ' + destName + '!</b> (' + Math.round(nearest.dist) + 'm away)';
             return;
         }
 
         resultDiv.innerHTML = '<em>Calculating walking times to stops...</em>';
 
-        // Get OSRM road-following distances from user location to all stops
-        var WALK_SPEED_MPM = 83.33; // 5 km/hr in meters per minute
+        var WALK_SPEED_MPM = 83.33;
         var allStopIds = Object.keys(stopLookup);
         var coordsStr = lon + ',' + lat + ';' + allStopIds.map(function(id) {
             return stopLookup[id].lon + ',' + stopLookup[id].lat;
@@ -3366,9 +4072,8 @@ async function planTrip() {
             }
         }
 
-        resultDiv.innerHTML = '<em>Finding best trip...</em>';
+        resultDiv.innerHTML = '<em>Finding best trips...</em>';
 
-        // Candidate starting stops (within 45 min walk)
         var candidateStops = [];
         for (var sid in walkTimesToStops) {
             if (sid === DEST_STOP_ID) continue;
@@ -3379,7 +4084,6 @@ async function planTrip() {
         }
         candidateStops.sort(function(a, b) { return a.walkMin - b.walkMin; });
 
-        // Fetch OSRM walking table between all stops (for walk-transfer/walk-finish)
         var walkCacheStopIds = Object.keys(stopLookup);
         var walkCacheCoords = walkCacheStopIds.map(function(id) {
             return stopLookup[id].lon + ',' + stopLookup[id].lat;
@@ -3397,150 +4101,97 @@ async function planTrip() {
             }
         } catch (e) {}
 
-        // Evaluate trips from each candidate stop
         var allTrips = [];
         for (var ci = 0; ci < candidateStops.length; ci++) {
             var cand = candidateStops[ci];
-            var trips = await findTimetableTrips(cand.id, arriveByMin, walkCache);
+            var searchTime = tripMode === 'depart' ? tripTimeMin + cand.walkMin : tripTimeMin;
+            var trips = await findTimetableTrips(cand.id, searchTime, walkCache, resolvedDestId, tripMode);
             for (var ti = 0; ti < trips.length; ti++) {
                 var trip = trips[ti];
+                var effectiveDepart = trip.departMin - cand.walkMin;
+                if (tripMode === 'depart' && effectiveDepart < tripTimeMin) continue;
                 if (trip.departMin >= cand.walkMin) {
                     allTrips.push({
                         trip: trip,
                         startStop: cand.id,
                         walkMin: cand.walkMin,
                         walkDist: cand.walkDist,
-                        effectiveDepart: trip.departMin - cand.walkMin,
+                        effectiveDepart: effectiveDepart,
                         arriveMin: trip.arriveMin
                     });
                 }
             }
         }
 
-        // Also consider walking directly to destination
         var destWalk = walkTimesToStops[DEST_STOP_ID];
-        if (destWalk && destWalk.min <= arriveByMin) {
-            allTrips.push({
-                trip: { type: 'walk-only', departMin: arriveByMin - destWalk.min, arriveMin: arriveByMin },
-                startStop: DEST_STOP_ID,
-                walkMin: destWalk.min,
-                walkDist: destWalk.dist,
-                effectiveDepart: arriveByMin - destWalk.min,
-                arriveMin: arriveByMin
-            });
-        }
-
-        if (allTrips.length === 0) {
-            resultDiv.innerHTML = '<b>Nearest stop:</b> ' + stopLookup[nearest.id].name + ' (' + Math.round(nearest.dist) + 'm walk)<br>' +
-                '<span style="color:red;">No trips found arriving by ' + formatTime(arriveByMin) + '.</span>';
-            return;
-        }
-
-        // Best trip = latest effective departure (leave home as late as possible)
-        allTrips.sort(function(a, b) { return b.effectiveDepart - a.effectiveDepart; });
-        var chosen = allTrips[0];
-        var best = chosen.trip;
-        var nearest = { id: chosen.startStop, dist: chosen.walkDist };
-        var nearestName = stopLookup[chosen.startStop].name;
-        var distMeters = chosen.walkDist;
-
-        // Handle walk-only trip
-        if (best.type === 'walk-only') {
-            var html = '<b>Walk directly to MathWorks Lakeside</b><br>';
-            html += '<div style="font-size:10px;color:var(--text-secondary);margin:2px 0;">' + chosen.walkDist + 'm walk (' + chosen.walkMin + ' min)</div>';
-            html += '<div style="font-size:10px;color:var(--text-muted);">Leave by ' + formatTime(arriveByMin - chosen.walkMin) + ' to arrive by ' + formatTime(arriveByMin) + '</div>';
-            resultDiv.innerHTML = html;
-            document.getElementById('trip-clear-wrap').style.display = '';
-            tripActive = true;
-            tripHidden = false;
-            updateTripButtons();
-            hideAll();
-            if (tripMarker) map.removeLayer(tripMarker);
-            if (tripPath) map.removeLayer(tripPath);
-            tripPath = L.layerGroup();
-            var dest = stopLookup[DEST_STOP_ID];
-            var walkUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + dest.lon + ',' + dest.lat + '?geometries=geojson&overview=full';
-            try {
-                var wResp = await fetch(walkUrl);
-                var wData = await wResp.json();
-                if (wData.code === 'Ok' && wData.routes && wData.routes.length > 0) {
-                    var wCoords = wData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
-                    L.polyline(wCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
-                }
-            } catch (e) {
-                L.polyline([[lat, lon], [dest.lat, dest.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
+        if (tripMode === 'depart') {
+            if (destWalk) {
+                allTrips.push({
+                    trip: { type: 'walk-only', departMin: tripTimeMin, arriveMin: tripTimeMin + destWalk.min },
+                    startStop: DEST_STOP_ID,
+                    walkMin: destWalk.min,
+                    walkDist: destWalk.dist,
+                    effectiveDepart: tripTimeMin,
+                    arriveMin: tripTimeMin + destWalk.min
+                });
             }
-            L.circleMarker([lat, lon], { radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1 }).bindTooltip('You', {permanent: true}).addTo(tripPath);
-            L.circleMarker([dest.lat, dest.lon], { radius: 7, color: 'white', weight: 3, fillColor: '#228B22', fillOpacity: 1 }).bindTooltip('MathWorks Lakeside', {permanent: true}).addTo(tripPath);
-            tripPath.addTo(map);
-            map.fitBounds(L.latLngBounds([[lat, lon], [dest.lat, dest.lon]]), {padding: [50, 50]});
-            return;
-        }
-
-        // Build segments for display and drawing
-        var segments = [];
-        var walkLeg = best.walkLeg || null;
-        if (best.type === 'direct') {
-            segments.push({
-                route: best.route,
-                routeName: routeInfo[best.route] ? routeInfo[best.route].short_name : '?',
-                dir: best.dir,
-                stops: best.stops,
-                departMin: best.departMin,
-                arriveMin: best.arriveMin
-            });
         } else {
-            for (var li = 0; li < best.legs.length; li++) {
-                var leg = best.legs[li];
-                segments.push({
-                    route: leg.route,
-                    routeName: routeInfo[leg.route] ? routeInfo[leg.route].short_name : '?',
-                    dir: leg.dir,
-                    stops: leg.stops,
-                    departMin: leg.departMin,
-                    arriveMin: leg.arriveMin
+            if (destWalk && destWalk.min <= tripTimeMin) {
+                allTrips.push({
+                    trip: { type: 'walk-only', departMin: tripTimeMin - destWalk.min, arriveMin: tripTimeMin },
+                    startStop: DEST_STOP_ID,
+                    walkMin: destWalk.min,
+                    walkDist: destWalk.dist,
+                    effectiveDepart: tripTimeMin - destWalk.min,
+                    arriveMin: tripTimeMin
                 });
             }
         }
 
-        // Build results HTML
-        var html = '<b>Walk to:</b> ' + nearestName + ' (' + distMeters + 'm, ' + chosen.walkMin + ' min)<br>';
-        html += '<div style="font-size:10px;color:var(--text-secondary);margin:2px 0;"><b>Depart:</b> ' + formatTime(best.departMin) + ' &bull; <b>Arrive:</b> ' + formatTime(best.arriveMin) + '</div>';
-        html += '<hr style="margin:4px 0;">';
-        for (var s = 0; s < segments.length; s++) {
-            var seg = segments[s];
-            var fromName = stopLookup[seg.stops[0]].name;
-            var toName = stopLookup[seg.stops[seg.stops.length - 1]].name;
-            var dirLabel = seg.dir === 0 ? 'E' : 'W';
-            var segDispColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length];
-            html += '<div style="margin:4px 0;padding:6px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ' + segDispColor + ';">';
-            html += '<b>Route ' + seg.routeName + '</b> (' + dirLabel + ')<br>';
-            html += '<span style="color:var(--text-secondary);">' + fromName + ' &rarr; ' + toName + '</span><br>';
-            html += '<span style="color:var(--text-muted);">' + formatTime(seg.departMin) + ' &rarr; ' + formatTime(seg.arriveMin) + ' &bull; ' + seg.stops.length + ' stops</span>';
-            html += '</div>';
-            if (s < segments.length - 1) {
-                if (walkLeg && s === 0 && (best.type === 'walk-transfer' || best.type === 'walk-finish')) {
-                    html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm to ' + stopLookup[walkLeg.to].name + ' (' + walkLeg.walkMin + ' min)</div>';
-                } else {
-                    var waitMin = segments[s + 1].departMin - seg.arriveMin;
-                    html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Transfer at ' + stopLookup[seg.stops[seg.stops.length - 1]].name + ' (' + waitMin + ' min wait)</div>';
-                }
-            }
+        if (allTrips.length === 0) {
+            var noTripMsg = tripMode === 'depart' ? 'No trips found departing at ' + formatTime(tripTimeMin) + '.' : 'No trips found arriving by ' + formatTime(tripTimeMin) + '.';
+            resultDiv.innerHTML = '<b>Nearest stop:</b> ' + stopLookup[nearest.id].name + ' (' + Math.round(nearest.dist) + 'm walk)<br>' +
+                '<span style="color:red;">' + noTripMsg + '</span>';
+            return;
         }
-        if (walkLeg && best.type === 'walk-finish') {
-            html += '<div style="text-align:center;font-size:10px;color:var(--text-muted);">&darr; Walk ' + Math.round(walkLeg.dist) + 'm (' + walkLeg.walkMin + ' min)</div>';
-        }
-        html += '<hr style="margin:4px 0;"><b>Arrive:</b> MathWorks Lakeside at ' + formatTime(best.arriveMin);
 
-        // Show alternative options
-        if (trips.length > 1) {
-            html += '<div style="margin-top:6px;font-size:10px;color:var(--text-secondary);"><b>' + (trips.length - 1) + ' other option' + (trips.length > 2 ? 's' : '') + ' available</b></div>';
-            var showCount = Math.min(trips.length - 1, 3);
-            for (var a = 1; a <= showCount; a++) {
-                var alt = trips[a];
-                var altRoute = alt.type === 'direct' ? routeInfo[alt.route].short_name : alt.legs.map(function(l) { return routeInfo[l.route].short_name; }).join(' + ');
-                html += '<div style="font-size:10px;color:var(--text-muted);">Depart ' + formatTime(alt.departMin) + ' (Route ' + altRoute + ')</div>';
+        // Pick best trip for each walking mode
+        var nearestCandId = candidateStops.length > 0 ? candidateStops[0].id : nearest.id;
+        var optMinimal = pickBestTrip(allTrips, 'minimal', nearestCandId, tripMode);
+        var optModerate = pickBestTrip(allTrips, 'moderate', nearestCandId, tripMode);
+        var optMax = pickBestTrip(allTrips, 'max', nearestCandId, tripMode);
+
+        planTripOptions = [];
+        var labels = [];
+
+        function isBetter(a, b) {
+            if (tripMode === 'depart') return a.arriveMin < b.arriveMin;
+            return a.effectiveDepart > b.effectiveDepart;
+        }
+
+        if (optMinimal && optMax && !isBetter(optMax, optMinimal)) {
+            planTripOptions.push(optMinimal);
+            labels.push('Best option');
+        } else {
+            if (optMinimal) { planTripOptions.push(optMinimal); labels.push('Less walking'); }
+            if (optModerate && (!optMinimal || isBetter(optModerate, optMinimal))) {
+                planTripOptions.push(optModerate);
+                labels.push('Moderate walking (≤1km)');
             }
+            if (optMax && isBetter(optMax, (optModerate || optMinimal || {effectiveDepart: -1, arriveMin: Infinity}))) {
+                planTripOptions.push(optMax);
+                labels.push('Most efficient');
+            }
+        }
+
+        planTripSelectedIdx = -1;
+
+        var html = destWalkInfo || '';
+        for (var i = 0; i < planTripOptions.length; i++) {
+            html += '<div class="trip-option-card" onclick="selectTripOption(' + i + ')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;background:var(--bg-primary);cursor:pointer;transition:border-color var(--transition),background var(--transition);" onmouseover="if(planTripSelectedIdx!==' + i + ')this.style.borderColor=\'var(--accent)\'" onmouseout="if(planTripSelectedIdx!==' + i + ')this.style.borderColor=\'var(--border)\'">';
+            html += buildOptionSummaryHtml(planTripOptions[i], labels[i], i);
+            html += '<div id="trip-option-detail-' + i + '" style="display:none;">' + buildOptionDetailHtml(planTripOptions[i], i) + '</div>';
+            html += '</div>';
         }
 
         resultDiv.innerHTML = html;
@@ -3549,112 +4200,9 @@ async function planTrip() {
         tripHidden = false;
         updateTripButtons();
 
-        hideAll();
-
-        if (tripMarker) map.removeLayer(tripMarker);
-        if (tripPath) map.removeLayer(tripPath);
-        tripPath = L.layerGroup();
-
-        var allCoords = [[lat, lon]];
-        for (var s = 0; s < segments.length; s++) {
-            var seg = segments[s];
-            var segColor = routeColors[sortedRoutes.indexOf(seg.route) % routeColors.length];
-            var stopCoords = seg.stops.map(function(sid) {
-                return [stopLookup[sid].lat, stopLookup[sid].lon];
-            });
-
-            var vcSlice = getVcSliceForSegment(seg.route, seg.stops);
-            if (vcSlice) {
-                L.polyline(vcSlice, {
-                    color: segColor, weight: 5, opacity: 0.9
-                }).addTo(tripPath);
-                vcSlice.forEach(function(c) { allCoords.push(c); });
-            } else {
-                var coordStr = stopCoords.map(function(p) { return p[1] + ',' + p[0]; }).join(';');
-                var osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + coordStr + '?geometries=geojson&overview=full';
-                try {
-                    var osrmResp = await fetch(osrmUrl);
-                    var osrmData = await osrmResp.json();
-                    if (osrmData.code === 'Ok' && osrmData.routes && osrmData.routes.length > 0) {
-                        var routedCoords = osrmData.routes[0].geometry.coordinates.map(function(p) {
-                            return [p[1], p[0]];
-                        });
-                        L.polyline(routedCoords, {
-                            color: segColor, weight: 5, opacity: 0.9
-                        }).addTo(tripPath);
-                        routedCoords.forEach(function(c) { allCoords.push(c); });
-                    } else {
-                        L.polyline(stopCoords, {
-                            color: segColor, weight: 5, opacity: 0.9
-                        }).addTo(tripPath);
-                        stopCoords.forEach(function(c) { allCoords.push(c); });
-                    }
-                } catch (e) {
-                    L.polyline(stopCoords, {
-                        color: segColor, weight: 5, opacity: 0.9
-                    }).addTo(tripPath);
-                    stopCoords.forEach(function(c) { allCoords.push(c); });
-                }
-            }
-
-            seg.stops.forEach(function(sid) {
-                var st = stopLookup[sid];
-                L.circleMarker([st.lat, st.lon], {
-                    radius: 5, color: 'white', weight: 2, fillColor: segColor, fillOpacity: 1
-                }).bindTooltip(st.name, {permanent: false}).addTo(tripPath);
-            });
+        for (var i = 0; i < planTripOptions.length; i++) {
+            updateLiveBusStatus(i);
         }
-
-        // Draw walk segment if present (using OSRM foot routing)
-        if (walkLeg) {
-            var wFrom = stopLookup[walkLeg.from];
-            var wTo = stopLookup[walkLeg.to];
-            var walkCoordStr = wFrom.lon + ',' + wFrom.lat + ';' + wTo.lon + ',' + wTo.lat;
-            var walkOsrmUrl = 'https://router.project-osrm.org/route/v1/foot/' + walkCoordStr + '?geometries=geojson&overview=full';
-            try {
-                var walkResp = await fetch(walkOsrmUrl);
-                var walkData = await walkResp.json();
-                if (walkData.code === 'Ok' && walkData.routes && walkData.routes.length > 0) {
-                    var walkCoords = walkData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
-                    L.polyline(walkCoords, { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
-                    walkCoords.forEach(function(c) { allCoords.push(c); });
-                } else {
-                    L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
-                }
-            } catch (e) {
-                L.polyline([[wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]], { color: '#555', weight: 4, dashArray: '6 8', opacity: 0.8 }).addTo(tripPath);
-            }
-            allCoords.push([wFrom.lat, wFrom.lon], [wTo.lat, wTo.lon]);
-        }
-
-        // Walk to starting stop (OSRM foot route)
-        var nearStop = stopLookup[nearest.id];
-        var walkToStopUrl = 'https://router.project-osrm.org/route/v1/foot/' + lon + ',' + lat + ';' + nearStop.lon + ',' + nearStop.lat + '?geometries=geojson&overview=full';
-        try {
-            var wtsResp = await fetch(walkToStopUrl);
-            var wtsData = await wtsResp.json();
-            if (wtsData.code === 'Ok' && wtsData.routes && wtsData.routes.length > 0) {
-                var wtsCoords = wtsData.routes[0].geometry.coordinates.map(function(p) { return [p[1], p[0]]; });
-                L.polyline(wtsCoords, { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
-                wtsCoords.forEach(function(c) { allCoords.push(c); });
-            } else {
-                L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
-            }
-        } catch (e) {
-            L.polyline([[lat, lon], [nearStop.lat, nearStop.lon]], { color: '#333', weight: 3, dashArray: '4 6', opacity: 0.7 }).addTo(tripPath);
-        }
-
-        L.circleMarker([lat, lon], {
-            radius: 7, color: 'white', weight: 3, fillColor: '#4363d8', fillOpacity: 1
-        }).bindTooltip('You', {permanent: true}).addTo(tripPath);
-
-        var dest = stopLookup[DEST_STOP_ID];
-        L.circleMarker([dest.lat, dest.lon], {
-            radius: 7, color: 'white', weight: 3, fillColor: '#228B22', fillOpacity: 1
-        }).bindTooltip('MathWorks Lakeside', {permanent: true}).addTo(tripPath);
-
-        tripPath.addTo(map);
-        map.fitBounds(L.latLngBounds(allCoords), {padding: [50, 50]});
 
     } catch (err) {
         resultDiv.innerHTML = '<span style="color:red;">Error: ' + err.message + '</span>';
@@ -3677,38 +4225,42 @@ var tripHidden = false;
 function updateTripButtons() {
     var hideBtn = document.getElementById('trip-hide-btn');
     var trashBtn = document.getElementById('trip-trash-btn');
-    if (tripActive) {
+    var routeSelected = tripActive && planTripSelectedIdx >= 0;
+    if (routeSelected) {
         hideBtn.style.opacity = '1';
         hideBtn.style.pointerEvents = 'auto';
-        trashBtn.style.opacity = '1';
-        trashBtn.style.pointerEvents = 'auto';
     } else {
         hideBtn.style.opacity = '0.35';
         hideBtn.style.pointerEvents = 'none';
+    }
+    if (tripActive) {
+        trashBtn.style.opacity = '1';
+        trashBtn.style.pointerEvents = 'auto';
+    } else {
         trashBtn.style.opacity = '0.35';
         trashBtn.style.pointerEvents = 'none';
     }
 }
 
 function toggleTripVisibility() {
-    if (!tripActive) return;
+    if (!tripActive || planTripSelectedIdx < 0) return;
     tripHidden = !tripHidden;
     var hideBtn = document.getElementById('trip-hide-btn');
     if (tripHidden) {
         if (tripPath) map.removeLayer(tripPath);
-        hideBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        hideBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>' +
             '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>' +
             '<line x1="1" y1="1" x2="23" y2="23"/></svg>';
     } else {
         if (tripPath) tripPath.addTo(map);
-        hideBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        hideBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
     }
 }
 
-document.getElementById('trip-hide-btn').addEventListener('click', function(e) { e.preventDefault(); toggleTripVisibility(); });
-document.getElementById('trip-trash-btn').addEventListener('click', function(e) { e.preventDefault(); clearTrip(); });
+document.getElementById('trip-hide-btn').addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); toggleTripVisibility(); });
+document.getElementById('trip-trash-btn').addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); clearTrip(); });
 
 // --- Live Bus Tracking ---
 var busMarkersLayer = L.layerGroup().addTo(map);
@@ -3716,19 +4268,110 @@ var busMarkers = {};
 var liveBusesEnabled = true;
 
 var routeColorLookup = {};
+var routeNameToId = {};
 sortedRoutes.forEach(function(routeId, idx) {
     var info = routeInfo[routeId];
     routeColorLookup[info.long_name] = routeColors[idx % routeColors.length];
     routeColorLookup[info.short_name] = routeColors[idx % routeColors.length];
+    routeNameToId[info.long_name] = routeId;
+    routeNameToId[info.short_name] = routeId;
 });
 
+function getRouteShape(routeName) {
+    var routeId = routeNameToId[routeName];
+    if (!routeId) return null;
+    var shapeId = routeShapesDir[routeId + '_0'] || routeShapesDir[routeId + '_1'] || bestShapes[routeId];
+    if (shapeId && shapeDataOriginal[shapeId]) return shapeDataOriginal[shapeId];
+    if (shapeId && shapeData[shapeId]) return shapeData[shapeId];
+    return null;
+}
+
+function snapToRoute(lat, lon, shape) {
+    var bestDist = Infinity, bestIdx = 0, bestFrac = 0;
+    for (var i = 0; i < shape.length - 1; i++) {
+        var ax = shape[i][0], ay = shape[i][1];
+        var bx = shape[i+1][0], by = shape[i+1][1];
+        var dx = bx - ax, dy = by - ay;
+        var len2 = dx*dx + dy*dy;
+        var t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((lat - ax)*dx + (lon - ay)*dy) / len2));
+        var px = ax + t*dx, py = ay + t*dy;
+        var dist = (lat - px)*(lat - px) + (lon - py)*(lon - py);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+            bestFrac = t;
+        }
+    }
+    return { idx: bestIdx, frac: bestFrac };
+}
+
+function routeDistance(shape, idx1, frac1, idx2, frac2) {
+    if (idx2 < idx1 || (idx2 === idx1 && frac2 < frac1)) return 0;
+    var dist = 0;
+    if (idx1 === idx2) {
+        var a = shape[idx1], b = shape[idx1+1];
+        return haversine(a[0], a[1], b[0], b[1]) * (frac2 - frac1);
+    }
+    var seg0 = shape[idx1], seg0b = shape[idx1+1];
+    dist += haversine(seg0[0], seg0[1], seg0b[0], seg0b[1]) * (1 - frac1);
+    for (var i = idx1 + 1; i < idx2; i++) {
+        dist += haversine(shape[i][0], shape[i][1], shape[i+1][0], shape[i+1][1]);
+    }
+    var segN = shape[idx2], segNb = shape[idx2+1];
+    dist += haversine(segN[0], segN[1], segNb[0], segNb[1]) * frac2;
+    return dist;
+}
+
+function advanceAlongRoute(shape, idx, frac, distMeters) {
+    var remaining = distMeters;
+    var curIdx = idx, curFrac = frac;
+    while (remaining > 0 && curIdx < shape.length - 1) {
+        var ax = shape[curIdx][0], ay = shape[curIdx][1];
+        var bx = shape[curIdx+1][0], by = shape[curIdx+1][1];
+        var segLen = haversine(ax, ay, bx, by);
+        var segRemaining = segLen * (1 - curFrac);
+        if (remaining <= segRemaining) {
+            curFrac += remaining / segLen;
+            remaining = 0;
+        } else {
+            remaining -= segRemaining;
+            curIdx++;
+            curFrac = 0;
+        }
+    }
+    if (curIdx >= shape.length - 1) { curIdx = shape.length - 2; curFrac = 1; }
+    var a = shape[curIdx], b = shape[curIdx+1];
+    var lat = a[0] + curFrac * (b[0] - a[0]);
+    var lon = a[1] + curFrac * (b[1] - a[1]);
+    var heading = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+    heading = 90 - heading;
+    if (heading < 0) heading += 360;
+    return { lat: lat, lon: lon, heading: heading, idx: curIdx, frac: curFrac };
+}
+
+function isForwardOnRoute(shape, fromIdx, fromFrac, toIdx, toFrac) {
+    return toIdx > fromIdx || (toIdx === fromIdx && toFrac >= fromFrac);
+}
+
 function createBusIcon(heading, color) {
+    var rotation = (heading != null && !isNaN(heading)) ? heading : null;
+    var dirIndicatorHtml = '';
+    if (rotation !== null) {
+        dirIndicatorHtml = '<div style="' +
+            'position:absolute;top:-4px;left:50%;transform:translateX(-50%) rotate(' + rotation + 'deg);' +
+            'width:16px;height:16px;pointer-events:none;' +
+            '">' +
+            '<svg width="16" height="16" viewBox="0 0 20 20" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));">' +
+            '<polygon points="10,2 4,16 10,12 16,16" fill="white" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>' +
+            '</svg></div>';
+    }
     return L.divIcon({
         className: '',
         html: '<div style="' +
-            'width:36px;height:36px;position:relative;cursor:pointer;' +
+            'width:36px;height:44px;position:relative;cursor:pointer;' +
             '">' +
-            '<svg width="36" height="36" viewBox="0 0 36 36" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));">' +
+            dirIndicatorHtml +
+            '<svg width="36" height="36" viewBox="0 0 36 36" style="position:absolute;top:8px;left:0;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));">' +
             '<rect x="6" y="4" width="24" height="28" rx="5" ry="5" fill="' + color + '" stroke="white" stroke-width="2"/>' +
             '<rect x="10" y="8" width="16" height="8" rx="2" fill="white" opacity="0.9"/>' +
             '<circle cx="12" cy="28" r="3" fill="white"/>' +
@@ -3737,10 +4380,31 @@ function createBusIcon(heading, color) {
             '<rect x="16" y="20" width="4" height="4" rx="1" fill="white" opacity="0.6"/>' +
             '<rect x="22" y="20" width="4" height="4" rx="1" fill="white" opacity="0.6"/>' +
             '</svg></div>',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
-        popupAnchor: [0, -18]
+        iconSize: [36, 44],
+        iconAnchor: [18, 26],
+        popupAnchor: [0, -26]
     });
+}
+
+var busInterpolationState = {};
+var busAnimationFrame = null;
+var busHeadingHistory = {};
+var INTERPOLATION_DURATION = 10000;
+var HEADING_HISTORY_SIZE = 5;
+var MAX_BUS_SPEED_MPS = 27; // ~60 mph cap
+var MAX_DIST_PER_UPDATE = MAX_BUS_SPEED_MPS * (INTERPOLATION_DURATION / 1000);
+
+function averageHeading(history) {
+    if (!history || history.length === 0) return null;
+    var sinSum = 0, cosSum = 0;
+    for (var i = 0; i < history.length; i++) {
+        var rad = history[i] * Math.PI / 180;
+        sinSum += Math.sin(rad);
+        cosSum += Math.cos(rad);
+    }
+    var avg = Math.atan2(sinSum / history.length, cosSum / history.length) * 180 / Math.PI;
+    if (avg < 0) avg += 360;
+    return avg;
 }
 
 function fetchLiveBuses() {
@@ -3749,23 +4413,91 @@ function fetchLiveBuses() {
         .then(function(res) { return res.json(); })
         .then(function(vehicles) {
             var activeIds = {};
+            var now = performance.now();
             vehicles.forEach(function(v) {
                 if (!v.Active || !v.Lat || !v.Long) return;
                 var id = v.VehiclePlate || v.ID;
                 activeIds[id] = true;
                 var color = routeColorLookup[v.Route] || '#333';
-                var icon = createBusIcon(v.Heading, color);
+                var shape = getRouteShape(v.Route);
+                var heading = v.Heading;
+                var newSnap = null;
+
+                if (shape) {
+                    newSnap = snapToRoute(v.Lat, v.Long, shape);
+                }
+
+                var prev = busInterpolationState[id];
+                var startIdx, startFrac;
+
+                if (prev && prev.shape === shape && shape && prev.targetIdx != null) {
+                    // Use the current displayed position as the start
+                    // (which is the previous target, i.e. where the bus "actually" was 10s ago)
+                    startIdx = prev.targetIdx;
+                    startFrac = prev.targetFrac;
+                    // If new target is behind current start on route, don't go backwards — hold position
+                    if (newSnap && !isForwardOnRoute(shape, startIdx, startFrac, newSnap.idx, newSnap.frac)) {
+                        newSnap = { idx: startIdx, frac: startFrac };
+                    }
+                } else if (newSnap) {
+                    startIdx = newSnap.idx;
+                    startFrac = newSnap.frac;
+                } else {
+                    startIdx = null;
+                    startFrac = null;
+                }
+
+                busInterpolationState[id] = {
+                    shape: shape,
+                    color: color,
+                    heading: heading,
+                    route: v.Route,
+                    plate: v.VehiclePlate || '',
+                    speed: v.Speed,
+                    address: v.AddressStreet ? v.AddressStreet + ', ' + v.AddressCity : '',
+                    startIdx: startIdx,
+                    startFrac: startFrac,
+                    targetIdx: newSnap ? newSnap.idx : null,
+                    targetFrac: newSnap ? newSnap.frac : null,
+                    totalDist: (shape && startIdx != null && newSnap)
+                        ? Math.min(routeDistance(shape, startIdx, startFrac, newSnap.idx, newSnap.frac), MAX_DIST_PER_UPDATE) : 0,
+                    fetchTime: now,
+                    rawLat: v.Lat,
+                    rawLon: v.Long
+                };
+
+                // On first appearance, place marker at start position (the "old" position)
+                var displayLat, displayLon;
+                if (shape && startIdx != null) {
+                    var a = shape[startIdx], b = shape[startIdx + 1];
+                    displayLat = a[0] + startFrac * (b[0] - a[0]);
+                    displayLon = a[1] + startFrac * (b[1] - a[1]);
+                } else {
+                    displayLat = v.Lat;
+                    displayLon = v.Long;
+                }
+
+                if (heading != null && !isNaN(heading)) {
+                    if (!busHeadingHistory[id]) busHeadingHistory[id] = [];
+                    busHeadingHistory[id].push(heading);
+                    if (busHeadingHistory[id].length > HEADING_HISTORY_SIZE) {
+                        busHeadingHistory[id].shift();
+                    }
+                }
+                var displayHeading = busHeadingHistory[id] && busHeadingHistory[id].length > 0
+                    ? averageHeading(busHeadingHistory[id]) : heading;
+                var icon = createBusIcon(displayHeading, color);
                 var popupContent = '<b>Bus ' + (v.VehiclePlate || '') + '</b><br>' +
                     'Route: ' + (v.Route || 'Unknown') + '<br>' +
                     'Speed: ' + (v.Speed ? v.Speed.toFixed(1) + ' mph' : 'Stopped') + '<br>' +
                     (v.AddressStreet ? v.AddressStreet + ', ' + v.AddressCity : '');
 
                 if (busMarkers[id]) {
-                    busMarkers[id].setLatLng([v.Lat, v.Long]);
+                    busMarkers[id].setLatLng([displayLat, displayLon]);
                     busMarkers[id].setIcon(icon);
                     busMarkers[id].setPopupContent(popupContent);
                 } else {
-                    busMarkers[id] = L.marker([v.Lat, v.Long], { icon: icon, zIndexOffset: 1000 })
+                    busMarkers[id] = L.marker([displayLat, displayLon], { icon: icon, zIndexOffset: 1000 })
                         .bindPopup(popupContent)
                         .addTo(busMarkersLayer);
                 }
@@ -3774,6 +4506,8 @@ function fetchLiveBuses() {
                 if (!activeIds[id]) {
                     busMarkersLayer.removeLayer(busMarkers[id]);
                     delete busMarkers[id];
+                    delete busInterpolationState[id];
+                    delete busHeadingHistory[id];
                 }
             });
         })
@@ -3782,18 +4516,44 @@ function fetchLiveBuses() {
         });
 }
 
+function animateBuses() {
+    var now = performance.now();
+    Object.keys(busInterpolationState).forEach(function(id) {
+        var state = busInterpolationState[id];
+        if (!state.shape || state.startIdx == null || state.targetIdx == null) return;
+        if (state.totalDist <= 0) return;
+        if (!busMarkers[id]) return;
+
+        var elapsed = now - state.fetchTime;
+        var t = Math.min(1, elapsed / INTERPOLATION_DURATION);
+
+        var dist = state.totalDist * t;
+        var pos = advanceAlongRoute(state.shape, state.startIdx, state.startFrac, dist);
+
+        var smoothedHeading = busHeadingHistory[id] && busHeadingHistory[id].length > 0
+            ? averageHeading(busHeadingHistory[id]) : state.heading;
+
+        busMarkers[id].setLatLng([pos.lat, pos.lon]);
+        busMarkers[id].setIcon(createBusIcon(smoothedHeading, state.color));
+    });
+    busAnimationFrame = requestAnimationFrame(animateBuses);
+}
+
 function toggleLiveBuses() {
     liveBusesEnabled = document.getElementById('showBuses').checked;
     if (liveBusesEnabled) {
         busMarkersLayer.addTo(map);
         fetchLiveBuses();
+        if (!busAnimationFrame) busAnimationFrame = requestAnimationFrame(animateBuses);
     } else {
         map.removeLayer(busMarkersLayer);
+        if (busAnimationFrame) { cancelAnimationFrame(busAnimationFrame); busAnimationFrame = null; }
     }
 }
 
 fetchLiveBuses();
-setInterval(fetchLiveBuses, 15000);
+setInterval(fetchLiveBuses, 10000);
+busAnimationFrame = requestAnimationFrame(animateBuses);
 
 // --- Stop-to-Stop Trip Planner ---
 (function() {
@@ -3839,6 +4599,15 @@ setInterval(fetchLiveBuses, 15000);
         if (this.value) document.getElementById('tripFromAddress').value = '';
     });
     document.getElementById('tripFromAddress').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') planTripStops();
+    });
+    document.getElementById('tripToAddress').addEventListener('input', function() {
+        if (this.value.trim()) document.getElementById('tripTo').value = '';
+    });
+    document.getElementById('tripTo').addEventListener('change', function() {
+        if (this.value) document.getElementById('tripToAddress').value = '';
+    });
+    document.getElementById('tripToAddress').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') planTripStops();
     });
 })();
@@ -3946,12 +4715,167 @@ function findConnections2(fromId, toId, afterMin, windowMin) {
     }).slice(0, 5);
 }
 
+var tripStopsHighlight = null;
+var tripStopsResults = [];
+var tripStopsSelectedIdx = -1;
+var tripStopsSavedVisibility = null;
+
+function updateTripCardHighlight(idx) {
+    var cards = document.querySelectorAll('#tripResults > div[onclick]');
+    cards.forEach(function(card, i) {
+        if (i === idx) {
+            card.style.background = 'var(--bg-selected)';
+            card.style.borderColor = 'var(--accent)';
+        } else {
+            card.style.background = 'var(--bg-primary)';
+            card.style.borderColor = 'var(--border)';
+        }
+    });
+}
+
+function showTripRoute(idx) {
+    // Toggle off if clicking the same result again
+    if (tripStopsSelectedIdx === idx) {
+        if (tripStopsHighlight) { map.removeLayer(tripStopsHighlight); tripStopsHighlight = null; }
+        tripStopsSelectedIdx = -1;
+        updateTripCardHighlight(-1);
+        if (tripStopsSavedVisibility) {
+            sortedRoutes.forEach(function(id) {
+                if (tripStopsSavedVisibility[id] && !routeActive[id] && routeLayers[id]) {
+                    routeLayers[id].addTo(map);
+                    routeActive[id] = true;
+                }
+            });
+            sortedRoutes.forEach(function(id) {
+                var cb = document.getElementById('cb-' + id);
+                if (cb) cb.checked = routeActive[id];
+            });
+            tripStopsSavedVisibility = null;
+        }
+        return;
+    }
+
+    // Save current visibility on first selection
+    if (tripStopsSelectedIdx === -1) {
+        tripStopsSavedVisibility = {};
+        sortedRoutes.forEach(function(id) {
+            tripStopsSavedVisibility[id] = routeActive[id];
+        });
+        hideAll();
+        routeLabelsLayer.clearLayers();
+        map.removeLayer(routeLabelsLayer);
+    }
+
+    if (tripStopsHighlight) { map.removeLayer(tripStopsHighlight); tripStopsHighlight = null; }
+    tripStopsSelectedIdx = idx;
+    updateTripCardHighlight(idx);
+
+    var opt = tripStopsResults[idx];
+    if (!opt) return;
+    tripStopsHighlight = L.layerGroup();
+    var allCoords = [];
+    var startStopId, endStopId;
+
+    if (opt.type === 'direct') {
+        var stopIds = [];
+        for (var i = opt._fromIdx; i <= opt._toIdx; i++) {
+            stopIds.push(opt._trip.stops[i].s);
+        }
+        startStopId = stopIds[0];
+        endStopId = stopIds[stopIds.length - 1];
+        var segColor = routeColors[sortedRoutes.indexOf(opt.routeId) % routeColors.length] || '#4363d8';
+        var vcSlice = getVcSliceForSegment(opt.routeId, stopIds);
+        if (vcSlice) {
+            L.polyline(vcSlice, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripStopsHighlight);
+            vcSlice.forEach(function(c) { allCoords.push(c); });
+        } else {
+            var coords = stopIds.map(function(sid) {
+                var st = stopLookup[sid] || scheduleStops[sid];
+                return st ? [st.lat, st.lon] : null;
+            }).filter(Boolean);
+            L.polyline(coords, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripStopsHighlight);
+            coords.forEach(function(c) { allCoords.push(c); });
+        }
+        stopIds.forEach(function(sid) {
+            if (sid === startStopId || sid === endStopId) return;
+            var st = stopLookup[sid] || scheduleStops[sid];
+            if (st) L.circleMarker([st.lat, st.lon], { radius: 5, color: 'white', weight: 2, fillColor: segColor, fillOpacity: 1 }).bindTooltip(st.name).addTo(tripStopsHighlight);
+        });
+    } else {
+        var legs = [
+            { routeId: opt.leg1RouteId, trip: opt._leg1Trip, fromIdx: opt._leg1FromIdx, toIdx: opt._leg1ToIdx },
+            { routeId: opt.leg2RouteId, trip: opt._leg2Trip, fromIdx: opt._leg2FromIdx, toIdx: opt._leg2ToIdx }
+        ];
+        startStopId = legs[0].trip.stops[legs[0].fromIdx].s;
+        endStopId = legs[legs.length - 1].trip.stops[legs[legs.length - 1].toIdx].s;
+        legs.forEach(function(leg) {
+            var stopIds = [];
+            for (var i = leg.fromIdx; i <= leg.toIdx; i++) {
+                stopIds.push(leg.trip.stops[i].s);
+            }
+            var segColor = routeColors[sortedRoutes.indexOf(leg.routeId) % routeColors.length] || '#4363d8';
+            var vcSlice = getVcSliceForSegment(leg.routeId, stopIds);
+            if (vcSlice) {
+                L.polyline(vcSlice, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripStopsHighlight);
+                vcSlice.forEach(function(c) { allCoords.push(c); });
+            } else {
+                var coords = stopIds.map(function(sid) {
+                    var st = stopLookup[sid] || scheduleStops[sid];
+                    return st ? [st.lat, st.lon] : null;
+                }).filter(Boolean);
+                L.polyline(coords, { color: segColor, weight: 5, opacity: 0.9 }).addTo(tripStopsHighlight);
+                coords.forEach(function(c) { allCoords.push(c); });
+            }
+            stopIds.forEach(function(sid) {
+                if (sid === startStopId || sid === endStopId) return;
+                var st = stopLookup[sid] || scheduleStops[sid];
+                if (st) L.circleMarker([st.lat, st.lon], { radius: 5, color: 'white', weight: 2, fillColor: segColor, fillOpacity: 1 }).bindTooltip(st.name).addTo(tripStopsHighlight);
+            });
+        });
+    }
+
+    // Add start and end markers
+    var startStop = stopLookup[startStopId] || scheduleStops[startStopId];
+    var endStop = stopLookup[endStopId] || scheduleStops[endStopId];
+    if (startStop) {
+        L.circleMarker([startStop.lat, startStop.lon], { radius: 8, color: 'white', weight: 3, fillColor: '#27ae60', fillOpacity: 1 }).bindTooltip('Start: ' + startStop.name, { permanent: true, direction: 'top' }).addTo(tripStopsHighlight);
+    }
+    if (endStop) {
+        L.circleMarker([endStop.lat, endStop.lon], { radius: 8, color: 'white', weight: 3, fillColor: '#e74c3c', fillOpacity: 1 }).bindTooltip('End: ' + endStop.name, { permanent: true, direction: 'top' }).addTo(tripStopsHighlight);
+    }
+
+    tripStopsHighlight.addTo(map);
+    if (startStop) allCoords.push([startStop.lat, startStop.lon]);
+    if (endStop) allCoords.push([endStop.lat, endStop.lon]);
+    if (allCoords.length > 1) {
+        map.fitBounds(L.latLngBounds(allCoords), { paddingTopLeft: [360, 50], paddingBottomRight: [50, 50] });
+    }
+}
+
 async function planTripStops() {
+    if (tripStopsHighlight) { map.removeLayer(tripStopsHighlight); tripStopsHighlight = null; }
+    if (tripStopsSavedVisibility) {
+        sortedRoutes.forEach(function(id) {
+            if (tripStopsSavedVisibility[id] && !routeActive[id] && routeLayers[id]) {
+                routeLayers[id].addTo(map);
+                routeActive[id] = true;
+            }
+        });
+        sortedRoutes.forEach(function(id) {
+            var cb = document.getElementById('cb-' + id);
+            if (cb) cb.checked = routeActive[id];
+        });
+        tripStopsSavedVisibility = null;
+    }
+    tripStopsSelectedIdx = -1;
+    tripStopsResults = [];
     var fromId = document.getElementById('tripFrom').value;
     var fromAddress = document.getElementById('tripFromAddress').value.trim();
     var toId = document.getElementById('tripTo').value;
+    var toAddress = document.getElementById('tripToAddress').value.trim();
     var resultsDiv = document.getElementById('tripResults');
     var walkInfo = '';
+    var walkEndInfo = '';
 
     if (fromAddress) {
         resultsDiv.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px;">Finding location...</div>';
@@ -3961,7 +4885,7 @@ async function planTripStops() {
             var geoResp = await fetch(geocodeUrl, {headers: {'User-Agent': 'MWRTA-TripPlanner/1.0'}});
             var geoResults = await geoResp.json();
             if (!geoResults || geoResults.length === 0) {
-                resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">Could not find that address. Try being more specific.</div>';
+                resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">Could not find that origin address. Try being more specific.</div>';
                 return;
             }
             var lat = parseFloat(geoResults[0].lat);
@@ -3975,7 +4899,36 @@ async function planTripStops() {
             var walkMeters = Math.round(nearest.dist);
             var walkMin = Math.ceil(walkMeters / 80);
             var stopName = stopLookup[nearest.id] ? stopLookup[nearest.id].name : (scheduleStops[nearest.id] ? scheduleStops[nearest.id].name : '?');
-            walkInfo = '<div style="background:var(--accent-soft);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--text-primary);">Walk to <b>' + stopName + '</b> (~' + walkMeters + 'm, ~' + walkMin + ' min)</div>';
+            walkInfo = '<div style="background:var(--accent-soft);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--text-primary);">Walk from origin to <b>' + stopName + '</b> (~' + walkMeters + 'm, ~' + walkMin + ' min)</div>';
+        } catch (e) {
+            resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">Geocoding failed: ' + e.message + '</div>';
+            return;
+        }
+    }
+
+    if (toAddress) {
+        resultsDiv.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px;">Finding destination...</div>';
+        try {
+            var geoUrlTo = 'https://nominatim.openstreetmap.org/search?format=json&q=' +
+                encodeURIComponent(toAddress + ', Massachusetts') + '&limit=1';
+            var geoRespTo = await fetch(geoUrlTo, {headers: {'User-Agent': 'MWRTA-TripPlanner/1.0'}});
+            var geoResultsTo = await geoRespTo.json();
+            if (!geoResultsTo || geoResultsTo.length === 0) {
+                resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">Could not find that destination address. Try being more specific.</div>';
+                return;
+            }
+            var destLat = parseFloat(geoResultsTo[0].lat);
+            var destLon = parseFloat(geoResultsTo[0].lon);
+            var nearestTo = findNearestStop(destLat, destLon);
+            if (!nearestTo.id) {
+                resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">No stops found near that destination.</div>';
+                return;
+            }
+            toId = nearestTo.id;
+            var walkMetersTo = Math.round(nearestTo.dist);
+            var walkMinTo = Math.ceil(walkMetersTo / 80);
+            var destStopName = stopLookup[nearestTo.id] ? stopLookup[nearestTo.id].name : (scheduleStops[nearestTo.id] ? scheduleStops[nearestTo.id].name : '?');
+            walkEndInfo = '<div style="background:var(--accent-soft);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--text-primary);">Walk from <b>' + destStopName + '</b> to destination (~' + walkMetersTo + 'm, ~' + walkMinTo + ' min)</div>';
         } catch (e) {
             resultsDiv.innerHTML = '<div style="color:#e74c3c;font-size:12px;">Geocoding failed: ' + e.message + '</div>';
             return;
@@ -3983,7 +4936,7 @@ async function planTripStops() {
     }
 
     if (!fromId || !toId) {
-        resultsDiv.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px;">Enter an address or select a stop, and choose a destination.</div>';
+        resultsDiv.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px;">Enter an address or select a stop for both origin and destination.</div>';
         return;
     }
     if (fromId === toId) {
@@ -4017,7 +4970,7 @@ async function planTripStops() {
 
     var allOptions = [];
     direct.forEach(function(d) {
-        allOptions.push({ type: 'direct', routeId: d.routeId, headsign: d.trip.headsign, scheduledDep: d.depMin, scheduledArr: d.arrMin, estDep: d.depMin, estArr: d.arrMin, duration: d.arrMin - d.depMin });
+        allOptions.push({ type: 'direct', routeId: d.routeId, headsign: d.trip.headsign, scheduledDep: d.depMin, scheduledArr: d.arrMin, estDep: d.depMin, estArr: d.arrMin, duration: d.arrMin - d.depMin, _trip: d.trip, _fromIdx: d.fromIdx, _toIdx: d.toIdx });
     });
     connections.forEach(function(c) {
         allOptions.push({
@@ -4025,7 +4978,9 @@ async function planTripStops() {
             transferStop: scheduleStops[c.transferStopId] ? scheduleStops[c.transferStopId].name : '?',
             scheduledDep: c.leg1.depMin, scheduledArr: c.leg2.arrMin,
             estDep: c.leg1.depMin, estArr: c.leg2.arrMin,
-            duration: c.leg2.arrMin - c.leg1.depMin, buffer: c.leg2.depMin - c.leg1.arrMin
+            duration: c.leg2.arrMin - c.leg1.depMin, buffer: c.leg2.depMin - c.leg1.arrMin,
+            _leg1Trip: c.leg1.trip, _leg1FromIdx: c.leg1.fromIdx, _leg1ToIdx: c.leg1.toIdx,
+            _leg2Trip: c.leg2.trip, _leg2FromIdx: c.leg2.fromIdx, _leg2ToIdx: c.leg2.toIdx
         });
     });
 
@@ -4041,7 +4996,7 @@ async function planTripStops() {
         var fallbackDirect = findDirectRoutes2(fromId, toId, searchStart, 480);
         var fallbackConnections = findConnections2(fromId, toId, searchStart, 480);
         fallbackDirect.forEach(function(d) {
-            allOptions.push({ type: 'direct', routeId: d.routeId, headsign: d.trip.headsign, scheduledDep: d.depMin, scheduledArr: d.arrMin, estDep: d.depMin, estArr: d.arrMin, duration: d.arrMin - d.depMin });
+            allOptions.push({ type: 'direct', routeId: d.routeId, headsign: d.trip.headsign, scheduledDep: d.depMin, scheduledArr: d.arrMin, estDep: d.depMin, estArr: d.arrMin, duration: d.arrMin - d.depMin, _trip: d.trip, _fromIdx: d.fromIdx, _toIdx: d.toIdx });
         });
         fallbackConnections.forEach(function(c) {
             allOptions.push({
@@ -4049,7 +5004,9 @@ async function planTripStops() {
                 transferStop: scheduleStops[c.transferStopId] ? scheduleStops[c.transferStopId].name : '?',
                 scheduledDep: c.leg1.depMin, scheduledArr: c.leg2.arrMin,
                 estDep: c.leg1.depMin, estArr: c.leg2.arrMin,
-                duration: c.leg2.arrMin - c.leg1.depMin, buffer: c.leg2.depMin - c.leg1.arrMin
+                duration: c.leg2.arrMin - c.leg1.depMin, buffer: c.leg2.depMin - c.leg1.arrMin,
+                _leg1Trip: c.leg1.trip, _leg1FromIdx: c.leg1.fromIdx, _leg1ToIdx: c.leg1.toIdx,
+                _leg2Trip: c.leg2.trip, _leg2FromIdx: c.leg2.fromIdx, _leg2ToIdx: c.leg2.toIdx
             });
         });
         allOptions.sort(function(a, b) { return a.estDep - b.estDep; });
@@ -4065,24 +5022,28 @@ async function planTripStops() {
         return;
     }
 
-    var html = walkInfo || '';
-    allOptions.forEach(function(opt) {
-        html += '<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;background:var(--bg-primary);">';
+    tripStopsResults = allOptions;
+    var html = (walkInfo || '') + (walkEndInfo || '');
+    allOptions.forEach(function(opt, idx) {
+        html += '<div onclick="showTripRoute(' + idx + ')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;background:var(--bg-primary);cursor:pointer;transition:border-color var(--transition);" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">';
         if (opt.type === 'direct') {
             var shortName = scheduleRouteShort[opt.routeId] || '?';
+            var rColor = routeColors[sortedRoutes.indexOf(opt.routeId) % routeColors.length] || '#4363d8';
             html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-primary);">';
             html += '<span style="font-weight:600;min-width:45px;">' + minToTime(opt.estDep) + '</span>';
-            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:var(--accent);">' + shortName + '</span>';
+            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:' + rColor + ';">' + shortName + '</span>';
             html += '<span>' + (opt.headsign || '') + '</span></div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Arrive ' + minToTime(opt.estArr) + ' (' + opt.duration + ' min)</div>';
         } else {
             var short1 = scheduleRouteShort[opt.leg1RouteId] || '?';
             var short2 = scheduleRouteShort[opt.leg2RouteId] || '?';
+            var rColor1 = routeColors[sortedRoutes.indexOf(opt.leg1RouteId) % routeColors.length] || '#4363d8';
+            var rColor2 = routeColors[sortedRoutes.indexOf(opt.leg2RouteId) % routeColors.length] || '#4363d8';
             html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-primary);">';
             html += '<span style="font-weight:600;min-width:45px;">' + minToTime(opt.estDep) + '</span>';
-            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:var(--accent);">' + short1 + '</span>';
+            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:' + rColor1 + ';">' + short1 + '</span>';
             html += '<span style="font-size:10px;color:var(--text-muted);">→</span>';
-            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:var(--accent);">' + short2 + '</span></div>';
+            html += '<span style="min-width:32px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:white;padding:0 4px;background:' + rColor2 + ';">' + short2 + '</span></div>';
             html += '<div style="font-size:10px;color:var(--text-secondary);margin-top:4px;">Transfer at ' + opt.transferStop + ' (' + opt.buffer + ' min wait)</div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);">Arrive ' + minToTime(opt.estArr) + ' (' + opt.duration + ' min total)</div>';
         }
