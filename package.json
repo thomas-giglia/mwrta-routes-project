@@ -1,0 +1,25 @@
+{
+  "name": "mwrta-gtfs-data",
+  "version": "1.0.0",
+  "description": "",
+  "main": "best_shapes.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thomas-giglia/mwrta-routes-project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thomas-giglia/mwrta-routes-project/issues"
+  },
+  "homepage": "https://github.com/thomas-giglia/mwrta-routes-project#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}
